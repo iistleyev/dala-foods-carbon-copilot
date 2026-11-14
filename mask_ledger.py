@@ -56,6 +56,13 @@ RESOLVED_DESIGNATOR = re.compile(rf"(?<![\w-]){LEGAL}\s+(?:VENDOR|EMP)_\d+\b")
 PARKED = re.compile("\ue000(.)\ue001")
 
 
+def _surname_and_initials(name):
+    """'Тестов А.Б.' / 'Тестов Арман Бекович' -> ('тестов', 'АБ'); 'Тестов' -> ('тестов', '')."""
+    words = name.split()
+    initials = "".join(w[0] for w in words[1:] if w[:1].isupper()).replace(".", "")
+    return words[0].casefold(), initials
+
+
 def _known_names(names):
     variants = sorted({name for name in names if name.strip()}, key=len, reverse=True)
     if variants:
@@ -77,6 +84,14 @@ class LedgerMasker:
                     self.aliases.setdefault(alias.casefold(), code)
         self.known = _known_names(self.aliases)
         self.full_names = _known_names(name for name in names if MARKER.search(name))
+        # Sole-proprietor counterparties by surname, so "ИП Фамилия" in a description gets the same
+        # code as the counterparty "ИП Фамилия А.Б." (one person, one code).
+        self.proprietors = {}
+        for name, code in self.vendors.items():
+            m = SOLE_PROPRIETOR.fullmatch(name.strip())
+            if m:
+                surname, initials = _surname_and_initials(m[2])
+                self.proprietors.setdefault(surname, []).append((initials, code))
 
     def _code(self, original, mapping, prefix, width):
         if original not in mapping:
@@ -87,6 +102,10 @@ class LedgerMasker:
         """One code per proprietor: reuse the counterparty's code if they are one."""
         key = f"ИП {name}"
         code = self.aliases.get(key.casefold()) or self.aliases.get(name.casefold())
+        if code is None:  # same surname as exactly one proprietor counterparty, initials not conflicting
+            surname, initials = _surname_and_initials(name)
+            same = {c for ini, c in self.proprietors.get(surname, []) if not ini or not initials or ini == initials}
+            code = same.pop() if len(same) == 1 else None
         if code is None:
             code = self._code(key, self.vendors, "VENDOR", 3)
             # Register both spellings so validate() also catches the bare surname anywhere else.

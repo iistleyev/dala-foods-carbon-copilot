@@ -273,3 +273,25 @@ def test_incomplete_run_exports_diagnostic_only(ctx, tmp_path, monkeypatch):
 def test_refrigerant_mass_in_grams(ctx):
     res, _ = run_row(ctx, make_row("R134a", "1330", "g", "1 500,5"))
     assert res["ef_id"] == "EF_R134A_KG" and res["activity_qty"] == pytest.approx(1.5005)
+
+
+# ---------------------------------------------------------------- Cat 4 overlap and reporting basis
+def test_fuel_and_freight_for_one_carrier_are_flagged_not_changed():
+    from run import summarise
+    from src.duplicates import FREIGHT_OVERLAP_FLAG, FUEL_OVERLAP_FLAG
+    rows = [make_row("ДТ для наемного транспорта (перевозчик ИП VENDOR_901)", "1320", "л", 500, line_id="X91001"),
+            make_row("Перевозка продукции Алматы–Тараз, 500 км, 10.0 т", "7110", "ткм", 5000, line_id="X91002"),
+            make_row("Перевозка продукции Алматы–Тараз, 500 км, 10.0 т", "7110", "ткм", 5000, line_id="X91003")]
+    for row, carrier in zip(rows, ["VENDOR_900", "VENDOR_901", "VENDOR_902"]):
+        row["counterparty"] = carrier          # fuel seller, the hired carrier itself, another carrier
+    extra = pd.DataFrame(rows)
+    extra["set"] = "test"
+    _, audit = run_pipeline(pd.concat([load_ledgers(), extra], ignore_index=True))
+    a = audit.set_index("line_id")
+    assert FUEL_OVERLAP_FLAG in a.loc["X91001", "review_flag"]
+    assert FREIGHT_OVERLAP_FLAG in a.loc["X91002", "review_flag"]
+    assert "double count" not in str(a.loc["X91003", "review_flag"])
+    assert a.loc["X91001", "tco2e"] == pytest.approx(500 * 2.68 / 1000)       # flag only, numbers unchanged
+    assert a.loc["X91002", "tco2e"] == pytest.approx(5000 * 0.11 / 1000)
+    basis = summarise(audit).set_index("category")["basis"]
+    assert basis["S2_ELECTRICITY"].startswith("location-based") and "market-based not reported" in basis["S2_ELECTRICITY"]

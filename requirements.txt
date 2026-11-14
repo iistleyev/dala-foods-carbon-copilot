@@ -1,4 +1,8 @@
-pandas
-scikit-learn
-pyyaml
-pytest
+# Exact versions the pipeline was tested with (Python 3.14). Pinned so results are reproducible
+# and dependencies can't change underneath the jury's re-run (OWASP LLM03: supply chain).
+pandas==3.0.5
+numpy==2.5.2
+scikit-learn==1.9.1
+scipy==1.18.1
+pyyaml==6.0.3
+pytest==9.2.0

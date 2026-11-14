@@ -6,7 +6,8 @@ import sys
 
 import pandas as pd
 
-from src.duplicates import find_duplicates
+from src.duplicates import (FREIGHT_OVERLAP_FLAG, FUEL_OVERLAP_FLAG, find_carrier_overlap,
+                            find_duplicates)
 from src.fallback import LOW_CONFIDENCE, SpendFallback
 from src.load import ROOT, load_airports, load_factors, load_ledgers, load_packaging
 from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result,
@@ -14,6 +15,15 @@ from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result,
 from src.score import confusion, score, worst_lines
 
 OUT = ROOT / "outputs"
+# Calculation basis per category, written into summary.csv (GHG Protocol / IFRS S2 disclosure).
+BASIS = {
+    "S1_STATIONARY": "IPCC 2006 Tier 1 default; CO2 only",
+    "S1_MOBILE": "IPCC 2006 Tier 1 default; CO2 only",
+    "S1_FUGITIVE": "refill = leak; GWP-100 from IPCC AR5",
+    "S2_ELECTRICITY": "location-based (Kazakhstan grid average); market-based not reported",
+    "S2_HEAT": "location-based (Almaty district heating factor)",
+    "S3_C4_TRANSPORT": "fuel-, distance- and spend-based; see Cat 4 overlap flags in audit.csv",
+}
 AUDIT_COLS = ["line_id", "set", "category", "ef_id", "activity_qty", "activity_unit", "method",
               "tco2e", "rule_id", "reason", "confidence", "review_flag"]
 
@@ -59,6 +69,8 @@ def run_pipeline(df=None):
             add_flag(res, QTY_FLAG)
         if df.at[i, "vat_unreadable"]:
             add_flag(res, "VAT unreadable")
+    for i, flag in find_carrier_overlap(df, {i: r["rule_id"] for i, r in results.items()}).items():
+        add_flag(results[i], flag)
 
     audit = pd.DataFrame.from_dict(results, orient="index").sort_index()
     audit.insert(0, "line_id", df["line_id"])
@@ -87,7 +99,9 @@ def summarise(audit):
     tot = pd.DataFrame([{"scope": "TOTAL", "category": "ALL", "lines": g["lines"].sum(), "tco2e": total,
                          "tco2e_activity": g["tco2e_activity"].sum(), "tco2e_spend": g["tco2e_spend"].sum(),
                          "share_of_total": 1.0, "activity_share": g["tco2e_activity"].sum() / total}])
-    return pd.concat([g, tot], ignore_index=True).round(4)
+    out = pd.concat([g, tot], ignore_index=True).round(4)
+    out["basis"] = out["category"].map(BASIS).fillna("")
+    return out
 
 
 def report_train(df, audit):
@@ -130,7 +144,7 @@ def report_warnings(audit):
     """Count of lines per hardening flag, so nothing fails silently."""
     print("\nReview warnings (lines flagged in outputs/audit.csv):")
     flags = audit["review_flag"].fillna("")
-    for flag in (QTY_FLAG, UNIT_GAP_FLAG):
+    for flag in (QTY_FLAG, UNIT_GAP_FLAG, FUEL_OVERLAP_FLAG, FREIGHT_OVERLAP_FLAG):
         hit = flags.str.contains(flag, regex=False)
         n_train = int((hit & (audit["set"] == "train")).sum())
         n_test = int((hit & (audit["set"] == "test")).sum())

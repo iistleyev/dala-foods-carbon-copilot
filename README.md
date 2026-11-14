@@ -63,12 +63,30 @@ activity `tCO2e = quantity × unit multiplier × factor / 1000`; spend `tCO2e = 
 - For a new year, run `python mask_ledger.py` locally on the raw train and test CSVs first.
   It checks both splits before writing masked files. Keep `mask_mapping.csv` and the raw files private.
 
+## Reporting basis (GHG Protocol, Scope 2 / Scope 3 guidance, IFRS S2)
+
+| Item | Basis |
+|---|---|
+| Organisation | Dala Foods LLP, **operational control** consolidation approach |
+| Reporting period | Calendar year 2025 (posting dates 1 Jan – 31 Dec 2025) |
+| Base year | 2025 — first inventory; no recalculation policy needed yet |
+| Gases | Reported as total tCO2e only; the case factor file does not split gases |
+| Fuels (Scope 1) | IPCC 2006 Tier 1 CO2 defaults (diesel 74,100, petrol 69,300, LPG 63,100, natural gas 56,100 kg/TJ, Vol. 2 Ch. 2–3). **CO2 only**: CH4/N2O are not in the factor file (≈ +1.5 % for diesel vehicles, IPCC Table 3.2.2) |
+| Fuel quantity | Fuel **purchased** in 2025 is treated as fuel burned in 2025 (incl. 2 deliveries into the own storage tank); stock changes are not in the ledger |
+| Refrigerants | Refill = leak (mass-balance simplification); GWP-100 from **IPCC AR5** as given in the factor file. IFRS S2 expects the latest IPCC report (AR6) unless a relief applies |
+| Scope 2 | **Location-based** only (Kazakhstan grid average; Almaty district heating). **Market-based not reported**: the ledger has no energy attribute certificates or supplier-specific factors |
+| Scope 3 included | Cat 1 goods & services (incl. mains water), Cat 2 capital goods (full emissions in the year bought, not depreciated), Cat 4 upstream transport (incl. outbound freight paid by Dala), Cat 5 waste & wastewater, Cat 6 business travel (flights by distance, hotels, taxi; per diem excluded as cash) |
+| Scope 3 not included | **Cat 3** fuel- and energy-related activities (relevant; no well-to-tank or grid-loss factors in the file). **Cat 12** end of life of sold packaging (relevant; needs sales volumes, not in a purchase ledger). Cat 7 commuting (no data). Cats 8–11, 13–15 not applicable or no data in a purchase ledger |
+| Known overlap | Diesel bought for a hired carrier (fuel-based) and freight bought from the same carrier (distance/spend-based) may cover the same trips: 15 + 23 lines, ≈ 29 + 28 tCO2e. Both are counted because the ledger can't show which trips overlap; all 38 lines carry a `possible Cat 4 double count` flag |
+| Excluded lines | Taxes, social contributions, advances, fines, per diem, duplicates: `method = excluded` with a reason in `audit.csv` |
+| Data quality | Share of activity- vs spend-based tCO2e per category in `summary.csv`; per-line method, rule and confidence in `audit.csv` |
+
 ## Outputs
 
 - `outputs/predictions.csv` — line_id, category, tco2e (683 test rows, 4 decimals)
 - `outputs/audit.csv` — every train + test line: category, ef_id, activity_qty/unit, method, tco2e,
   rule_id, reason, confidence, review_flag (no counterparty names)
-- `outputs/summary.csv` — totals by scope and category, activity vs spend share
+- `outputs/summary.csv` — totals by scope and category, activity vs spend share, calculation basis
 
 ## Test lines needing human review
 
