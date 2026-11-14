@@ -65,7 +65,10 @@ def flight_result(rule, legs, counts, factors):
         detail.append({"from": origin, "to": dest, "km": km, "tickets": count, "pkm": pkm,
                        "ef_id": ef, "kgCO2e_per_pkm": rate, "tco2e": tonnes})
         totals[ef] = totals.get(ef, 0.0) + abs(tonnes)
-    reason = rule["reason"] + " Leg calculations: " + json.dumps(detail, separators=(",", ":"))
+    # Display only: operating systems' math libraries differ in the last digits of km, so the
+    # audit shows 9 decimals to stay identical on any machine. Totals use the unrounded values.
+    shown = [{k: round(v, 9) if isinstance(v, float) else v for k, v in leg.items()} for leg in detail]
+    reason = rule["reason"] + " Leg calculations: " + json.dumps(shown, separators=(",", ":"))
     return result(rule["category"], max(totals, key=totals.get), sum(leg["pkm"] for leg in detail),
                   "pkm", "activity", sum(leg["tco2e"] for leg in detail), rule["id"], reason)
 
