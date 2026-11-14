@@ -1,0 +1,188 @@
+{
+  "inventory": {
+    "total_tco2e": 199638.2483,
+    "test_only_tco2e": 67029.1226,
+    "by_scope_tco2e": {
+      "S1": 14088.0504,
+      "S2": 15992.7741,
+      "S3": 169557.4238
+    },
+    "by_category_tco2e": {
+      "S3_C1_GOODS": 168213.5999,
+      "S2_ELECTRICITY": 14495.7464,
+      "S1_STATIONARY": 8530.3294,
+      "S1_MOBILE": 4155.4319,
+      "S2_HEAT": 1497.0277,
+      "S1_FUGITIVE": 1402.2891,
+      "S3_C2_CAPITAL": 776.9,
+      "S3_C5_WASTE": 345.0313,
+      "S3_C4_TRANSPORT": 173.5884,
+      "S3_C6_TRAVEL": 48.3042
+    },
+    "activity_share": 0.99467,
+    "spend_share": 0.00533,
+    "lines": 1952,
+    "lines_flagged": 58
+  },
+  "product": {
+    "kgco2e_per_kg": 1.901317,
+    "kgco2e_per_l": 1.958356,
+    "note": "average across all products (105,000 t); per litre at 1.03 kg/l"
+  },
+  "purchase_groups": [
+    {
+      "group": "raw milk",
+      "net_kzt": 27833045146.0,
+      "tco2e": 157499.2574,
+      "share_of_spend": 0.749754,
+      "share_of_emissions": 0.788923,
+      "tco2e_per_mkzt": 5.658715
+    },
+    {
+      "group": "electricity",
+      "net_kzt": 581063425.0,
+      "tco2e": 14495.7464,
+      "share_of_spend": 0.015652,
+      "share_of_emissions": 0.07261,
+      "tco2e_per_mkzt": 24.946926
+    },
+    {
+      "group": "natural gas",
+      "net_kzt": 200976381.0,
+      "tco2e": 8530.3294,
+      "share_of_spend": 0.005414,
+      "share_of_emissions": 0.042729,
+      "tco2e_per_mkzt": 42.444437
+    },
+    {
+      "group": "district heat",
+      "net_kzt": 47405945.0,
+      "tco2e": 1497.0277,
+      "share_of_spend": 0.001277,
+      "share_of_emissions": 0.007499,
+      "tco2e_per_mkzt": 31.578902
+    },
+    {
+      "group": "refrigerants",
+      "net_kzt": 5077848.0,
+      "tco2e": 1402.2891,
+      "share_of_spend": 0.000137,
+      "share_of_emissions": 0.007024,
+      "tco2e_per_mkzt": 276.158148
+    },
+    {
+      "group": "own-fleet fuel",
+      "net_kzt": 452352702.0,
+      "tco2e": 4155.4319,
+      "share_of_spend": 0.012185,
+      "share_of_emissions": 0.020815,
+      "tco2e_per_mkzt": 9.186265
+    },
+    {
+      "group": "packaging",
+      "net_kzt": 5672395734.0,
+      "tco2e": 9540.3078,
+      "share_of_spend": 0.1528,
+      "share_of_emissions": 0.047788,
+      "tco2e_per_mkzt": 1.681883
+    },
+    {
+      "group": "capital goods",
+      "net_kzt": 644000000.0,
+      "tco2e": 776.9,
+      "share_of_spend": 0.017348,
+      "share_of_emissions": 0.003892,
+      "tco2e_per_mkzt": 1.206366
+    },
+    {
+      "group": "services",
+      "net_kzt": 611442393.0,
+      "tco2e": 179.2881,
+      "share_of_spend": 0.016471,
+      "share_of_emissions": 0.000898,
+      "tco2e_per_mkzt": 0.293222
+    },
+    {
+      "group": "other",
+      "net_kzt": 1075136997.0,
+      "tco2e": 1561.6705,
+      "share_of_spend": 0.028962,
+      "share_of_emissions": 0.007823,
+      "tco2e_per_mkzt": 1.452532
+    }
+  ],
+  "energy_headline": {
+    "share_of_spend": 0.022343,
+    "share_of_emissions": 0.122838
+  },
+  "hotspots": {
+    "raw milk": 0.788923,
+    "electricity": 0.07261,
+    "packaging": 0.047788,
+    "natural gas": 0.042729,
+    "own-fleet fuel": 0.020815
+  },
+  "green_loan": {
+    "natural_gas_m3": 4466141.0,
+    "natural_gas_tco2e": 8530.3294,
+    "grid_electricity_mwh": 18119.683,
+    "grid_electricity_tco2e": 14495.7464,
+    "scope12_tco2e": 30080.8245,
+    "grid_factor": 0.8,
+    "gas_factor": 1.91,
+    "break_even_cop": 3.560209,
+    "share_of_gas_heat_to_heat_pumps": 0.4,
+    "cop_table": [
+      {
+        "cop": 2.5,
+        "change_t": 1447.029684,
+        "change_pct_scope12": 0.048105
+      },
+      {
+        "cop": 3.0,
+        "change_t": 637.169449,
+        "change_pct_scope12": 0.021182
+      },
+      {
+        "cop": 3.5,
+        "change_t": 58.697853,
+        "change_pct_scope12": 0.001951
+      },
+      {
+        "cop": 4.0,
+        "change_t": -375.155844,
+        "change_pct_scope12": -0.012472
+      },
+      {
+        "cop": 5.0,
+        "change_t": -982.55102,
+        "change_pct_scope12": -0.032664
+      }
+    ],
+    "solar_tco2e_saved_per_mwp": 1040.0,
+    "solar_yield_kwh_per_kwp": 1300,
+    "note": "High-temperature steam (pasteurisation, UHT) cannot fully move to heat pumps; the best use is low-temperature heat (CIP, hot water, pre-heating) and heat recovery from refrigeration."
+  },
+  "mistakes_caught": {
+    "refrigerant_lines": 13,
+    "refrigerant_tco2e": 1402.2891,
+    "refrigerant_hidden_in_service_lines": 4,
+    "refrigerant_hidden_tco2e": 244.0717,
+    "flight_lines": 80,
+    "round_trip_lines": 49,
+    "round_trip_return_legs_tco2e": 17.43803,
+    "highlight": {
+      "line_id": "L00131",
+      "kg": 22.5,
+      "ef_id": "EF_R404A_KG",
+      "tco2e": 88.7175,
+      "calculation": "22.5 kg x 3943 / 1000 = 88.7175 tCO2e"
+    }
+  },
+  "robustness": {
+    "injection_lines_test": 4,
+    "injection_lines_ignored": 4,
+    "stress_checks": 107,
+    "stress_passed": 107
+  }
+}
