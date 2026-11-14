@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .convert import parse_number
+from .convert import MEASUREMENT, UNIT_ALIASES, parse_number
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -15,6 +15,7 @@ TEST_FILE = "ledger_test_masked.csv"
 
 # Every spelling we accept for a unit -> one canonical code (the codes used in the official data).
 UNIT_MAP = {
+    **UNIT_ALIASES,
     "кг": "кг", "кг.": "кг", "kg": "кг", "килограмм": "кг",
     "т": "т", "т.": "т", "тн": "т", "тонна": "т", "t": "т",
     "л": "л", "л.": "л", "литр": "л", "l": "л",
@@ -86,6 +87,7 @@ def parse_quantity(values: pd.Series) -> tuple[pd.Series, pd.Series]:
         num = num.astype(float)
         num[retry] = values[retry].map(parse_number).astype(float)
     num = num.astype(float)
+    num = num.where(num.abs() < float("inf"))
     return num, num.isna()
 
 
@@ -98,8 +100,19 @@ def normalise(df: pd.DataFrame) -> pd.DataFrame:
     df["injection"] = clean.map(lambda x: x[1])
     df["raw_text"] = df["description"].map(norm_text)  # used only for duplicate matching
     df["unit_code"] = df["unit"].map(norm_unit)
-    df["quantity"], df["quantity_unreadable"] = parse_quantity(df["quantity"])
-    df["vat_kzt"] = pd.to_numeric(df["vat_kzt"], errors="coerce").fillna(0.0)
+    raw_qty = df["quantity"]
+    df["quantity"], df["quantity_unreadable"] = parse_quantity(raw_qty)
+    # Repair a quantity that includes its unit only if the two source fields agree.
+    for i in df.index[df["quantity_unreadable"] & raw_qty.notna()]:
+        match = MEASUREMENT.fullmatch(str(raw_qty.at[i]).strip())
+        if match:
+            unit = UNIT_ALIASES[match[2].lower()]
+            if df.at[i, "unit_code"] in ("", unit):
+                df.at[i, "quantity"] = parse_number(match[1])
+                df.at[i, "unit_code"] = unit
+                df.at[i, "quantity_unreadable"] = False
+    df["vat_kzt"], df["vat_unreadable"] = parse_quantity(df["vat_kzt"])
+    df["amount_kzt_gross"], _ = parse_quantity(df["amount_kzt_gross"])
     df["net_kzt"] = df["amount_kzt_gross"] - df["vat_kzt"]
     return df
 
@@ -116,7 +129,17 @@ def load_ledgers() -> pd.DataFrame:
 def load_packaging() -> dict:
     """packaging_specs.csv -> {normalised item name: kg per piece}."""
     spec = read_csv("packaging_specs.csv")
-    return {norm_text(r.item): float(r.unit_weight_g) / 1000 for r in spec.itertuples()}
+    weights = {}
+    for row in spec.itertuples():
+        name = norm_text(row.item)
+        grams = parse_number(row.unit_weight_g)
+        if not name or grams is None or not 0 < grams < float("inf"):
+            raise ValueError("Invalid item name or unit weight in packaging_specs.csv")
+        weight = grams / 1000
+        if name in weights and weights[name] != weight:
+            raise ValueError("Conflicting unit weights in packaging_specs.csv")
+        weights[name] = weight
+    return weights
 
 
 def load_factors() -> dict:

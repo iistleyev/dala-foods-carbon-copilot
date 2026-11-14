@@ -9,7 +9,7 @@ import pandas as pd
 from src.duplicates import find_duplicates
 from src.fallback import LOW_CONFIDENCE, SpendFallback
 from src.load import ROOT, load_airports, load_factors, load_ledgers, load_packaging
-from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result, review_flags,
+from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result,
                        spend_result)
 from src.score import confusion, score, worst_lines
 
@@ -29,15 +29,15 @@ def run_pipeline(df=None):
     factors, airports, packaging = load_factors(), load_airports(), load_packaging()
     dups = find_duplicates(df)
 
-    results, pending, unit_gaps = {}, [], {}
+    results, pending = {}, []
     for i, row in df.iterrows():
         if row["line_id"] in dups:
-            res, unit_gaps[i] = result(
+            res = result(
                 "EXCLUDE", "", 0.0, "", "excluded", 0.0, "DUPLICATE",
                 "Same doc_no, counterparty, description, quantity and amount as an earlier line.",
-                flag=f"duplicate of {dups[row['line_id']]}"), False
+                flag=f"duplicate of {dups[row['line_id']]}")
         else:
-            res, unit_gaps[i] = classify(row, rules, factors, airports, packaging)
+            res, _ = classify(row, rules, factors, airports, packaging)
         if res is None:
             pending.append(i)
         else:
@@ -54,9 +54,11 @@ def run_pipeline(df=None):
                 add_flag(res, "low confidence")
             results[i] = res
 
-    for i, res in results.items():  # no silent failures: unreadable quantity, unit gaps
-        for flag in review_flags(df.loc[i], res, unit_gaps[i]):
-            add_flag(res, flag)
+    for i, res in results.items():
+        if df.at[i, "quantity_unreadable"]:
+            add_flag(res, QTY_FLAG)
+        if df.at[i, "vat_unreadable"]:
+            add_flag(res, "VAT unreadable")
 
     audit = pd.DataFrame.from_dict(results, orient="index").sort_index()
     audit.insert(0, "line_id", df["line_id"])
@@ -70,6 +72,8 @@ def run_pipeline(df=None):
 
 
 def summarise(audit):
+    if audit["tco2e"].isna().any():
+        raise ValueError("Resolve all audit rows before calculating inventory totals.")
     a = audit.copy()
     a["scope"] = a["category"].str.extract(r"^(S\d)")[0].fillna("EXCLUDE")
     a["t_activity"] = a["tco2e"].where(a["method"] == "activity", 0.0)
@@ -105,10 +109,17 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     df, audit = run_pipeline()
     OUT.mkdir(exist_ok=True)
+    review_path = OUT / "audit.review.csv"
+    if audit["method"].eq("review").any():
+        audit.to_csv(review_path, index=False, encoding="utf-8-sig")
+        count = int(audit["method"].eq("review").sum())
+        raise SystemExit(f"{count} unresolved rows. See {review_path}. No new predictions or totals exported.")
+
     test = audit[audit["set"] == "test"]
     test[["line_id", "category", "tco2e"]].to_csv(OUT / "predictions.csv", index=False, float_format="%.4f")
     audit.to_csv(OUT / "audit.csv", index=False, encoding="utf-8-sig")
     summarise(audit).to_csv(OUT / "summary.csv", index=False, encoding="utf-8-sig")
+    review_path.unlink(missing_ok=True)
     report_train(df, audit)
     print(f"\nWrote outputs/predictions.csv ({len(test)} rows), outputs/audit.csv ({len(audit)} rows), "
           f"outputs/summary.csv")

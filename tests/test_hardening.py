@@ -1,8 +1,9 @@
 """Hardening for unseen data, tested on small INVENTED lines (no test-set lines):
 1. no silent failures (unreadable quantity, activity item with an uncovered unit),
 2. number/unit parsing with thousand separators and Latin units,
-3. piece weights from packaging_specs.csv -> grams in the name -> rules.yaml default,
+3. piece weights from packaging_specs.csv -> grams in the name,
 4. mixed-factor flight routes."""
+import json
 import math
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ from run import run_pipeline  # noqa: E402
 from src.convert import parse_grams, parse_kg, parse_km, parse_number  # noqa: E402
 from src.load import (ROOT, load_airports, load_factors, load_ledgers, load_packaging,  # noqa: E402
                       normalise, parse_quantity)
-from src.rules import QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, review_flags  # noqa: E402
+from src.rules import QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules  # noqa: E402
 
 NBSP = " "
 
@@ -59,30 +60,29 @@ def test_unreadable_quantity_on_activity_line_is_flagged_not_zeroed(ctx):
     row = make_row("Молоко сырое (тестовая партия)", "1310", "кг", "n/a")
     assert math.isnan(row["quantity"]) and row["quantity_unreadable"]
     res, unit_gap = run_row(ctx, row)
-    assert res is None and unit_gap is False          # no milk number from an unreadable quantity
-    assert review_flags(row, {"method": "spend"}, unit_gap) == [QTY_FLAG]
+    assert unit_gap and res["method"] == "review" and res["tco2e"] is None
+    assert res["category"] == "S3_C1_GOODS" and res["ef_id"] == "EF_MILK_KG"
 
 
 def test_unreadable_quantity_on_spend_line_still_flagged(ctx):
     row = make_row("Консалтинговые услуги (тест)", "7211", "усл", "")
     res, unit_gap = run_row(ctx, row)
     assert res["ef_id"] == "SP_SERVICES_PROF" and res["tco2e"] == pytest.approx(100 * 0.25 / 1000)
-    assert review_flags(row, res, unit_gap) == [QTY_FLAG]
+    assert row["quantity_unreadable"] and not unit_gap
 
 
-def test_activity_item_with_uncovered_unit_falls_through_and_is_flagged(ctx):
-    # Sugar in "мешок" (bags): the sugar rule has no conversion for it -> ML fallback (spend)
+def test_unconvertible_physical_item_is_held(ctx):
+    # No verified kg per bag.
     row = make_row("Сахар-песок тестовый", "1312", "мешок", 40)
     res, unit_gap = run_row(ctx, row)
-    assert res is None and unit_gap is True
-    assert review_flags(row, {"method": "spend"}, unit_gap) == [UNIT_GAP_FLAG]
+    assert unit_gap and res["method"] == "review" and UNIT_GAP_FLAG in res["review_flag"]
 
 
-def test_refrigerant_service_without_kg_falls_to_spend_rule_and_is_flagged(ctx):
+def test_unmeasurable_refrigerant_is_held_before_maintenance_spend(ctx):
     row = make_row("Сервисное обслуживание, дозаправка фреона (тест)", "8111", "усл", 1)
     res, unit_gap = run_row(ctx, row)
-    assert res["rule_id"] == "SP_MAINTENANCE" and res["method"] == "spend"
-    assert UNIT_GAP_FLAG in review_flags(row, res, unit_gap)
+    assert res["rule_id"] == "REFRIGERANT" and res["method"] == "review"
+    assert unit_gap and UNIT_GAP_FLAG in res["review_flag"]
 
 
 def test_normal_lines_get_no_hardening_flags(ctx):
@@ -90,7 +90,7 @@ def test_normal_lines_get_no_hardening_flags(ctx):
                 make_row("Транспортные услуги (тест)", "7110", "рейс", 1),   # freight spend is normal
                 make_row("Электроэнергия тест, завод", "8110", "МВт·ч", 2)]:
         res, unit_gap = run_row(ctx, row)
-        assert res is not None and review_flags(row, res, unit_gap) == []
+        assert res is not None and not res["review_flag"] and not unit_gap
 
 
 def test_flags_reach_audit_and_predictions_end_to_end():
@@ -100,9 +100,9 @@ def test_flags_reach_audit_and_predictions_end_to_end():
     extra["set"] = "test"
     _, audit = run_pipeline(pd.concat([df, extra], ignore_index=True))
     a = audit.set_index("line_id")
-    assert UNIT_GAP_FLAG in a.loc["X90001", "review_flag"] and a.loc["X90001", "method"] == "spend"
+    assert UNIT_GAP_FLAG in a.loc["X90001", "review_flag"] and a.loc["X90001", "method"] == "review"
     assert QTY_FLAG in a.loc["X90002", "review_flag"]
-    assert not a.loc[["X90001", "X90002"], "tco2e"].isna().any()  # still a number in predictions
+    assert a.loc[["X90001", "X90002"], "tco2e"].isna().all()
 
 
 # ---------------------------------------------------------------- 2. parsing
@@ -162,26 +162,29 @@ def test_piece_weight_from_grams_in_name(ctx):
     assert res["activity_qty"] == pytest.approx(30.0) and "grams in the item name" in res["reason"]
 
 
-def test_piece_weight_rules_yaml_default_last(ctx):
+def test_no_default_for_unknown_cap(ctx):
     row = make_row("Крышка тестовая без веса", "1311", "шт", 1000)
     res, _ = run_row(ctx, row, packaging={})
-    assert res["ef_id"] == "EF_HDPE_KG" and res["activity_qty"] == pytest.approx(2.5)
-    assert "rules.yaml default" in res["reason"]
+    assert res["ef_id"] == "EF_HDPE_KG" and res["method"] == "review"
+    assert res["activity_qty"] is None
 
 
-def test_pieces_with_no_weight_anywhere_fall_through_and_are_flagged(ctx):
-    # PET has no rules.yaml default for шт (it relies on grams in the name)
+def test_unidentified_preform_needs_review(ctx):
     row = make_row("Преформа ПЭТ тестовая", "1311", "шт", 1000)
     res, unit_gap = run_row(ctx, row, packaging={})
-    assert res is None and unit_gap is True
+    assert unit_gap and res["method"] == "review"
 
 
 # ---------------------------------------------------------------- 4. mixed flights
-def test_mixed_factor_route_joins_factors_and_lists_legs(ctx):
+def test_mixed_factor_route_records_official_primary_factor_and_each_leg(ctx):
     row = make_row("Авиабилет NQZ-ALA-FRA, EMP_99, эконом", "7212", "билет", 1)
     res, _ = run_row(ctx, row)
-    assert res["ef_id"] == "EF_FLIGHT_DOM_PKM+EF_FLIGHT_LONG_PKM"
-    assert "NQZ-ALA" in res["reason"] and "ALA-FRA" in res["reason"] and "km" in res["reason"]
+    assert res["ef_id"] == "EF_FLIGHT_LONG_PKM"
+    legs = json.loads(res["reason"].split("Leg calculations: ")[1])
+    assert [(leg["from"], leg["to"]) for leg in legs] == [("NQZ", "ALA"), ("ALA", "FRA")]
+    assert {leg["ef_id"] for leg in legs} == {"EF_FLIGHT_DOM_PKM", "EF_FLIGHT_LONG_PKM"}
+    for leg in legs:
+        assert leg["tco2e"] == pytest.approx(leg["km"] * leg["tickets"] * leg["kgCO2e_per_pkm"] / 1000)
     one = [run_row(ctx, make_row(f"Авиабилет {r}, EMP_99, эконом", "7212", "билет", 1))[0]
            for r in ("NQZ-ALA", "ALA-FRA")]
     assert res["tco2e"] == pytest.approx(sum(x["tco2e"] for x in one))     # each leg keeps its factor
@@ -192,3 +195,81 @@ def test_same_factor_route_unchanged(ctx):
     res, _ = run_row(ctx, row)
     assert res["ef_id"] == "EF_FLIGHT_SHORT_PKM" and "+" not in res["ef_id"]
     assert "Mixed route" not in res["reason"]
+
+
+@pytest.mark.parametrize("name,kg", [
+    ("Партия: Преформа PET 1,5 л", 28), ("Преформа ПЭТ 0.9l", 22),
+    ("Поставка: Крышка HDPE 38 мм", 2.5), ("Гофроящик 4-клапанный, партия 2", 350),
+])
+def test_official_weights_without_explicit_grams(ctx, name, kg):
+    res, _ = run_row(ctx, make_row(name, "1311", "шт", 1000))
+    assert res["activity_qty"] == kg and "packaging_specs.csv" in res["reason"]
+
+
+@pytest.mark.parametrize("description,gl,unit", [
+    ("milk", "1310", "kg"), ("natural gas", "8110", "m3"), ("electricity", "8110", "kWh"),
+    ("heat", "7210", "Gcal"), ("diesel", "1320", "l"), ("R-134a refill", "8111", "kg"),
+    ("unknown packaging", "1311", "pcs"),
+])
+def test_physical_groups_cannot_reach_spend_fallback(ctx, description, gl, unit):
+    for quantity, raw_unit in [("unknown", unit), (20, "unknown")]:
+        res, _ = run_row(ctx, make_row(description, gl, raw_unit, quantity))
+        assert res["method"] == "review" and res["tco2e"] is None
+
+
+@pytest.mark.parametrize("suffix,unit", [
+    ("т", "т"), ("t", "т"), ("л", "л"), ("L", "л"), ("кВтч", "кВт·ч"),
+    ("kWh", "кВт·ч"), ("Гкал", "Гкал"), ("Gcal", "Гкал"), ("км", "км"),
+    ("km", "км"), ("kg", "кг"), ("г", "г"), ("g", "г"),
+])
+def test_localised_ledger_amounts_and_embedded_units(suffix, unit):
+    row = make_row("test", "1310", "", f"1 500,75 {suffix}", gross="112 000,40", vat="12 000,25")
+    assert row["quantity"] == 1500.75 and row["unit_code"] == unit
+    assert row["net_kzt"] == pytest.approx(100000.15)
+
+
+def test_unknown_vat_blocks_spend_but_known_zero_is_valid(ctx):
+    bad, _ = run_row(ctx, make_row("consulting research", "7211", "усл", 1, vat="missing"))
+    good, _ = run_row(ctx, make_row("consulting research", "7211", "усл", 1, vat=0))
+    assert bad["method"] == "review" and bad["tco2e"] is None
+    assert good["method"] == "spend" and good["tco2e"] == pytest.approx(0.028)
+
+
+@pytest.mark.parametrize("route", [
+    "ALA - NQZ, separate ticket: FRA → IST", "ALA/NQZ; unrelated words; FRA to IST",
+    "ALA-NQZ / FRA-IST", "ALA-NQZ FRA-IST",
+])
+def test_disconnected_routes_never_create_a_transfer(ctx, route):
+    res, _ = run_row(ctx, make_row(f"Flight {route}", "7212", "билет", 1))
+    legs = json.loads(res["reason"].split("Leg calculations: ")[1])
+    assert [(leg["from"], leg["to"]) for leg in legs] == [("ALA", "NQZ"), ("FRA", "IST")]
+
+
+def test_ticket_quantities_and_unknown_endpoints(ctx):
+    row = make_row("Flight ticket 1: NQZ-ALA-FRA, ticket 2: FRA-NQZ", "7212", "билет", 2)
+    res, _ = run_row(ctx, row)
+    legs = json.loads(res["reason"].split("Leg calculations: ")[1])
+    assert [leg["tickets"] for leg in legs] == [1, 1, 1]
+    for route, qty in [("ALA-NQZ-XYZ", 1), ("NQZ-ALA-FRA, ticket 1: IST-FRA; ticket 2: FRA-IST", 3),
+                       ("ALA-NQZ; FRA-IST", 2)]:
+        res, _ = run_row(ctx, make_row("Flight " + route, "7212", "билет", qty))
+        assert res["method"] == "review"
+
+
+def test_incomplete_run_exports_diagnostic_only(ctx, tmp_path, monkeypatch):
+    import run
+    row = make_row("Electricity", "8110", "unknown", 50).to_frame().T
+    row["set"] = "test"
+    df, audit = run_pipeline(row)
+    monkeypatch.setattr(run, "run_pipeline", lambda: (df, audit))
+    monkeypatch.setattr(run, "OUT", tmp_path)
+    with pytest.raises(SystemExit, match="1 unresolved"):
+        run.main()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["audit.review.csv"]
+    with pytest.raises(ValueError, match="Resolve all"):
+        run.summarise(audit)
+
+
+def test_refrigerant_mass_in_grams(ctx):
+    res, _ = run_row(ctx, make_row("R134a", "1330", "g", "1 500,5"))
+    assert res["ef_id"] == "EF_R134A_KG" and res["activity_qty"] == pytest.approx(1.5005)

@@ -1,20 +1,21 @@
 """Rule engine: reads rules.yaml and returns the first matching rule's result for a ledger line."""
+import json
 import math
 from pathlib import Path
 
 import yaml
 
-from .convert import flight_legs, parse_km, piece_weight_kg, refrigerant_ef, unit_multiplier
+from .convert import flight_legs, parse_km, piece_weight_kg, refrigerant_ef, ticket_counts, unit_multiplier
 
 SPEND_UNIT = "1000 KZT net"
 
 # Review flags written to the audit file (run.py prints a count for each).
 QTY_FLAG = "quantity unreadable"
-UNIT_GAP_FLAG = "activity item computed by spend: unit not covered"
+UNIT_GAP_FLAG = "physical activity requires review"
 
-# Why a matching rule could not produce a number (the engine then tries the next rule).
+# Reasons returned when a matched physical rule cannot calculate emissions.
 UNIT_NOT_COVERED = "unit not covered"
-QTY_UNREADABLE = "quantity unreadable"
+
 
 
 def load_rules(path: Path) -> list:
@@ -41,30 +42,36 @@ def result(category, ef_id, qty, unit, method, tco2e, rule_id, reason, confidenc
             "confidence": confidence, "review_flag": flag}
 
 
+def unresolved(category, ef_id, rule_id, reason, flag):
+    """No estimate is possible. Missing values are distinct from measured zeroes."""
+    return result(category, ef_id, None, "", "review", None, rule_id, reason, 0.0, flag)
+
+
 def spend_result(row, ef_id, category, factors, rule_id, reason, confidence=1.0, flag=""):
-    qty = row["net_kzt"] / 1000.0  # thousand KZT, net of VAT
+    if not math.isfinite(row["net_kzt"]):
+        return unresolved(category, ef_id, rule_id, "Check gross amount and recorded VAT.", "net spend unreadable")
+    qty = row["net_kzt"] / 1000.0
     return result(category, ef_id, qty, SPEND_UNIT, "spend", qty * factors[ef_id]["value"] / 1000.0,
                   rule_id, reason, confidence, flag)
 
 
-def flight_result(rule, legs, q, factors):
-    """One leg or several with the same factor: that factor. Legs with different factors
-    (e.g. NQZ-ALA domestic + ALA-FRA long-haul): factors joined with '+', per-leg km in the reason."""
-    pkm = sum(km for *_, km, _ in legs) * q
-    tco2e = sum(km * q * factors[ef]["value"] for *_, km, ef in legs) / 1000.0
-    efs = list(dict.fromkeys(ef for *_, ef in legs))  # distinct, in route order
-    reason = rule["reason"]
-    if len(efs) > 1:
-        per_leg = ", ".join(f"{a}-{b} {km:.0f} km ({ef})" for a, b, km, ef in legs)
-        reason = f"{reason} Mixed route; legs: {per_leg}."
-    return result(rule["category"], "+".join(efs), pkm, "pkm", "activity", tco2e, rule["id"], reason)
+def flight_result(rule, legs, counts, factors):
+    """The official primary factor is the one contributing the most absolute CO2e."""
+    detail, totals = [], {}
+    for (origin, dest, km, ef), count in zip(legs, counts, strict=True):
+        pkm = km * count
+        rate = factors[ef]["value"]
+        tonnes = pkm * rate / 1000
+        detail.append({"from": origin, "to": dest, "km": km, "tickets": count, "pkm": pkm,
+                       "ef_id": ef, "kgCO2e_per_pkm": rate, "tco2e": tonnes})
+        totals[ef] = totals.get(ef, 0.0) + abs(tonnes)
+    reason = rule["reason"] + " Leg calculations: " + json.dumps(detail, separators=(",", ":"))
+    return result(rule["category"], max(totals, key=totals.get), sum(leg["pkm"] for leg in detail),
+                  "pkm", "activity", sum(leg["tco2e"] for leg in detail), rule["id"], reason)
 
 
 def apply_rule(rule: dict, row, factors: dict, airports: dict, packaging: dict):
-    """Compute the result for a matching rule.
-
-    Returns (result, None) on success, or (None, why) when the rule cannot produce a number
-    (unit not covered / quantity unreadable); the engine then tries the next rule."""
+    """Calculate the line or return the reason that its activity could not be measured."""
     method = rule.get("method", "activity")
     cat, rid, reason = rule["category"], rule["id"], rule["reason"]
     text, q = row["text"], row["quantity"]
@@ -77,66 +84,64 @@ def apply_rule(rule: dict, row, factors: dict, airports: dict, packaging: dict):
 
     # every method below multiplies the ledger quantity, so it must be readable
     if q is None or (isinstance(q, float) and math.isnan(q)):
-        return None, QTY_UNREADABLE
+        return None, QTY_FLAG
 
     if method == "flight":
         legs = flight_legs(text, airports)
         if not legs:
-            return None, UNIT_NOT_COVERED
-        return flight_result(rule, legs, q, factors), None
+            return None, "incomplete or unknown airport route"
+        counts = ticket_counts(text, legs, q, airports)
+        if counts is None:
+            return None, "ticket count does not reconcile with listed itineraries"
+        return flight_result(rule, legs, counts, factors), None
 
     if method == "rail":
         km = parse_km(text)
         if km is None:
-            return None, UNIT_NOT_COVERED
+            return None, "missing freight distance"
         tkm = q * km
         return result(cat, rule["ef_id"], tkm, "tkm", "activity",
                       tkm * factors[rule["ef_id"]]["value"] / 1000.0, rid, reason), None
 
     # plain activity rule: quantity x unit multiplier, in the factor's unit
     units, unit = rule.get("units", {}), row["unit_code"]
+    if unit == "г" and "кг" in units:
+        q, unit = q / 1000, "кг"
+        reason += " Ledger grams converted to kg."
     if unit not in units:
         return None, UNIT_NOT_COVERED
-    if unit == "шт":  # pieces -> kg: packaging_specs.csv, then grams in the name, then rules.yaml
-        mult, source = piece_weight_kg(text, units[unit], packaging)
+    if units[unit] == "package_weight":
+        mult, source = piece_weight_kg(text, packaging)
         if source:
             reason = f"{reason} {source}"
     else:
         mult = unit_multiplier(units[unit], text)
     if mult is None:
-        return None, UNIT_NOT_COVERED
+        return None, "missing or ambiguous unit weight or refill mass"
     ef_id = refrigerant_ef(text) if rule["ef_id"] == "by_gas" else rule["ef_id"]
     if ef_id is None:
-        return None, UNIT_NOT_COVERED
+        return None, "unidentified refrigerant"
     qty = q * mult  # negative quantity (credit note) stays negative: never abs()
     return result(cat, ef_id, qty, factors[ef_id]["unit"], "activity",
                   qty * factors[ef_id]["value"] / 1000.0, rid, reason), None
 
 
 def classify(row, rules: list, factors: dict, airports: dict, packaging: dict | None = None):
-    """First matching rule that can compute the line wins.
-
-    Returns (result or None, unit_gap). result None means the ML fallback decides.
-    unit_gap is True when an activity-item rule (review_if_unit_missing) matched but could not
-    convert the line's unit, so the line falls through to a later rule or the ML fallback."""
-    packaging = packaging or {}
-    unit_gap = False
+    """Return the matched result and whether a physical calculation needs review."""
     for rule in rules:
-        if matches(rule, row):
-            res, why = apply_rule(rule, row, factors, airports, packaging)
-            if res is not None:
-                return res, unit_gap
-            if why == UNIT_NOT_COVERED and rule.get("review_if_unit_missing"):
-                unit_gap = True
-    return None, unit_gap
+        if not matches(rule, row):
+            continue
+        res, why = apply_rule(rule, row, factors, airports, packaging or {})
+        if res is not None:
+            return res, False
+        if rule.get("physical_only"):
+            ef = rule.get("ef_id")
+            if ef == "by_gas":
+                ef = refrigerant_ef(row["text"])
+            return unresolved(rule["category"], ef, rule["id"], why, UNIT_GAP_FLAG), True
 
-
-def review_flags(row, res: dict, unit_gap: bool) -> list:
-    """Flags that do not depend on which rule won: unreadable quantity, and an activity item
-    that ended up spend-based because its unit was not covered."""
-    flags = []
-    if bool(row.get("quantity_unreadable", False)):
-        flags.append(QTY_FLAG)
-    if unit_gap and res["method"] == "spend":
-        flags.append(UNIT_GAP_FLAG)
-    return flags
+    # Every purchase in these ledger accounts requires an identified physical item.
+    if row["gl"] in {"1310", "1311", "1320", "7210", "8110"}:
+        return unresolved("", "", "UNKNOWN_PHYSICAL_ITEM", "Identify the item and physical unit.",
+                          UNIT_GAP_FLAG), True
+    return None, False

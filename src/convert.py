@@ -1,13 +1,26 @@
-"""Unit conversion to the factor's unit, plus parsers for kg / km / grams / flight routes in text."""
+"""Conversions for ledger quantities, package weights and flight itineraries."""
 import math
 import re
 
-# Thousand separators: plain space, no-break space (U+00A0), narrow no-break space (U+202F).
-THOUSANDS = "[   ]"
-# A number: either grouped in thousands ("1 500", "12 500,5") or plain ("1500", "11.1", "1,5").
-NUM = r"(-?\d{1,3}(?:" + THOUSANDS + r"\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?)"
+THOUSANDS = r"[ \u00a0\u202f]"
+NUM = rf"([+-]?(?:\d{{1,3}}(?:{THOUSANDS}\d{{3}})+|\d+)(?:[.,]\d+)?)"
 EARTH_RADIUS_KM = 6371.0
 LONG_HAUL_KM = 3700.0
+
+# Ledger unit, accepted spellings in either the unit column or an amount such as "1 500 kWh".
+SUFFIXES = {
+    "кг": ("кг", "kg"), "км": ("км", "km"), "г": ("г", "g"),
+    "т": ("т", "t"), "л": ("л", "l"),
+    "кВт·ч": ("квт·ч", "квт*ч", "квт.ч", "квтч", "kwh"),
+    "МВт·ч": ("мвт·ч", "мвт*ч", "мвт.ч", "мвтч", "mwh"),
+    "Гкал": ("гкал", "gcal"), "ГДж": ("гдж", "gj"),
+    "м3": ("м3", "м³", "m3", "m³"),
+    "тыс. м3": ("тыс. м3", "тыс. м³", "тыс.м3", "тыс м3"),
+}
+UNIT_ALIASES = {alias: unit for unit, aliases in SUFFIXES.items() for alias in aliases}
+UNIT_PATTERN = "|".join(map(re.escape, sorted(UNIT_ALIASES, key=len, reverse=True)))
+MEASUREMENT = re.compile(rf"(?<![\w.,]){NUM}\s*({UNIT_PATTERN})(?!\w)", re.I)
+WEIGHT_IN_NAME = re.compile(rf"(?<!\w){NUM}\s*(?:г|g)\b", re.I)
 
 
 def _num(s: str) -> float:
@@ -15,62 +28,60 @@ def _num(s: str) -> float:
 
 
 def parse_number(s):
-    """'1 500' / '1 500,5' / '12' -> float; anything unreadable -> None."""
-    if s is None:
-        return None
     s = str(s).strip()
-    if not re.fullmatch(NUM, s):
-        return None
-    return _num(s)
+    return _num(s) if re.fullmatch(NUM, s) else None
 
 
-def parse_kg(text: str):
-    """'дозаправка r404a 11.1 кг' -> 11.1 ; '1 500 кг' -> 1500 ; '11.1 kg' -> 11.1"""
-    m = re.search(NUM + r"\s*(?:кг|kg)", text)
-    return _num(m.group(1)) if m else None
+def parse_measure(text, unit):
+    for match in MEASUREMENT.finditer(text):
+        if UNIT_ALIASES[match[2].lower()] == unit:
+            return _num(match[1])
+    return None
 
 
-def parse_km(text: str):
-    """'алматы-ташкент, 41.1 т, 3100 км' -> 3100 ; '3 100 km' -> 3100"""
-    m = re.search(NUM + r"\s*(?:км|km)\b", text)
-    return _num(m.group(1)) if m else None
+def parse_kg(text):
+    return parse_measure(text, "кг")
 
 
-def parse_grams(text: str):
-    """'преформа пэт 28 г, 1,5 л' -> 28 ; 'преформа pet 22г 0,9л' -> 22 ; '28 g' -> 28"""
-    m = re.search(NUM + r"\s*(?:г|g)(?![а-яa-z])", text)
-    return _num(m.group(1)) if m else None
+def parse_km(text):
+    return parse_measure(text, "км")
 
 
-def piece_weight_kg(text: str, rule_spec, packaging: dict):
-    """kg per piece for a line counted in шт. Sources, in order:
-    1. packaging_specs.csv, matched on the normalised item name;
-    2. grams written in the item name ('преформа пэт 28 г');
-    3. the rule's default in rules.yaml (last resort).
-    Returns (kg_per_piece, source_sentence) or (None, None)."""
+def parse_grams(text):
+    return parse_measure(text, "г")
+
+
+def _package_key(name):
+    # Remove the nominal gram weight, retaining SKU dimensions and bottle volume.
+    name = WEIGHT_IN_NAME.sub(" ", name.lower()).replace("пэт", "pet")
+    name = re.sub(r"(?<=\d),(?=\d)", ".", name)
+    name = re.sub(r"(?<=\d)\s*[lл]\b", " л", name)
+    return tuple(re.findall(r"\d+(?:\.\d+)?|[^\W\d_]+", name))
+
+
+def piece_weight_kg(text, packaging):
+    """Prefer the reference SKU, then the written grams, then a unique weight-free SKU."""
     if text in packaging:
         return packaging[text], "Piece weight from packaging_specs.csv."
-    g = parse_grams(text)
-    if g is not None:
-        return g / 1000, "Piece weight from grams in the item name."
-    if isinstance(rule_spec, (int, float)):
-        return float(rule_spec), "Piece weight from the rules.yaml default."
+    grams = parse_grams(text)
+    if grams is not None:
+        if math.isfinite(grams) and grams > 0:
+            return grams / 1000, "Piece weight from grams in the item name."
+        return None, None
+    words = _package_key(text)
+    matches = []
+    for name, weight in packaging.items():
+        key = _package_key(name)
+        if key and any(words[i:i + len(key)] == key for i in range(len(words) - len(key) + 1)):
+            matches.append(weight)
+    if len(matches) == 1:
+        return matches[0], "Piece weight from packaging_specs.csv."
     return None, None
 
 
-def unit_multiplier(spec, text: str):
-    """A conversion spec from rules.yaml -> number to multiply the ledger quantity by.
-
-    spec is a number (1, 1.03, 1000 ...), a fraction string like '1/4.1868',
-    'kg_in_text' (quantity is a service count; the kg are written in the text), or
-    'grams_in_text' (pieces x grams-per-piece written in the item name / 1000)."""
-    if isinstance(spec, (int, float)):
-        return float(spec)
+def unit_multiplier(spec, text):
     if spec == "kg_in_text":
         return parse_kg(text)
-    if spec == "grams_in_text":
-        g = parse_grams(text)
-        return g / 1000 if g is not None else None
     if isinstance(spec, str) and "/" in spec:
         a, b = spec.split("/")
         return float(a) / float(b)
@@ -80,35 +91,74 @@ def unit_multiplier(spec, text: str):
 def haversine_km(a, b) -> float:
     lat1, lon1, lat2, lon2 = map(math.radians, (a[0], a[1], b[0], b[1]))
     h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
-    return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(h))
+    return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(min(h, 1.0)))
+
+
+# A comma, semicolon or free text separates itineraries. Only connect codes joined by
+# a route separator, so separate tickets never acquire a fictitious transfer leg.
+ROUTE_JOIN = re.compile(r"\s*(?:->|[-‐‑–—→/>]|\b(?:to|via|до|через)\b)\s*|\s+", re.I)
+IATA = re.compile(r"\b[a-z]{3}\b", re.I | re.ASCII)
+TICKET_LABEL = re.compile(
+    r"\b(?:ticket|авиабилет|билет)\b(?:\s*(?:no\.?\s*|[#№]\s*)?\d+)?\s*:?", re.I
+)
+AIRPORT_PAIR = re.compile(r"(?=\b([a-z]{3})\s*(?:->|[-‐‑–—→/>])\s*([a-z]{3})\b)", re.I | re.ASCII)
+TICKET_BOUNDARY = re.compile(
+    r"([-‐‑–—→]\s*[a-z]{3})(?:\s+/\s+|\s+)(?=[a-z]{3}\s*[-‐‑–—→])", re.I | re.ASCII
+)
 
 
 def flight_legs(text: str, airports: dict):
-    """'авиабилет ala-nqz-ala, ...' -> [(ALA, NQZ, km, ef_id), (NQZ, ALA, km, ef_id)].
-
-    The factor is chosen per leg: both airports in KZ -> domestic; else < 3700 km -> short; else long."""
-    m = re.search(r"\b([a-z]{3}(?:-[a-z]{3})+)\b", text)
-    if not m:
-        return None
-    codes = [c.upper() for c in m.group(1).split("-")]
-    if not all(c in airports for c in codes):
-        return None
+    """Return all flown segments in document order, or None for an incomplete route."""
+    # Check overlapping pairs so an unknown final stop cannot truncate a valid route.
+    for pair in AIRPORT_PAIR.finditer(text):
+        if any(code.upper() not in airports for code in pair.groups()):
+            return None
+    # Disconnected ticket strings must not acquire a fictitious transfer leg.
+    text = TICKET_BOUNDARY.sub(r"\1;", text)
+    codes = [m for m in IATA.finditer(text) if m[0].upper() in airports]
     legs = []
-    for x, y in zip(codes, codes[1:]):
-        km = haversine_km(airports[x], airports[y])
-        if airports[x][2] == "KZ" and airports[y][2] == "KZ":
-            ef = "EF_FLIGHT_DOM_PKM"
+    used = set()
+    for i, (left, right) in enumerate(zip(codes, codes[1:])):
+        if not ROUTE_JOIN.fullmatch(text[left.end():right.start()]):
+            continue
+        a, b = left[0].upper(), right[0].upper()
+        km = haversine_km(airports[a], airports[b])
+        if airports[a][2] == airports[b][2] == "KZ":
+            factor = "EF_FLIGHT_DOM_PKM"
         elif km < LONG_HAUL_KM:
-            ef = "EF_FLIGHT_SHORT_PKM"
+            factor = "EF_FLIGHT_SHORT_PKM"
         else:
-            ef = "EF_FLIGHT_LONG_PKM"
-        legs.append((x, y, km, ef))
-    return legs
+            factor = "EF_FLIGHT_LONG_PKM"
+        legs.append((a, b, km, factor))
+        used.update((i, i + 1))
+    return legs if legs and len(used) == len(codes) else None
+
+
+def ticket_counts(text, legs, quantity, airports):
+    """A ledger quantity applies to the itinerary. Individually listed tickets count once each."""
+    labels = list(TICKET_LABEL.finditer(text))
+    if len(labels) < 2:
+        # Several passengers can share a connected itinerary. A quantity on
+        # disconnected, unlabelled tickets cannot safely be allocated per route.
+        if abs(quantity) > 1 and any(a[1] != b[0] for a, b in zip(legs, legs[1:])):
+            return None
+        return [quantity] * len(legs)
+    if abs(quantity) != len(labels):
+        return None
+    listed = []
+    for i, label in enumerate(labels):
+        end = labels[i + 1].start() if i + 1 < len(labels) else len(text)
+        trip = flight_legs(text[label.end():end], airports)
+        if not trip:
+            return None
+        listed.extend(trip)
+    if listed != legs:
+        return None
+    return [math.copysign(1.0, quantity)] * len(legs)
 
 
 def refrigerant_ef(text: str):
-    """Pick the refrigerant factor from the gas name in the text."""
-    t = text.replace("-", "").replace(" ", "")
+    t = text.lower().replace("-", "").replace(" ", "")
     for gas in ("r404a", "r134a", "r410a", "r744"):
         if gas in t:
             return "EF_" + gas.upper() + "_KG"

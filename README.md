@@ -46,19 +46,22 @@ activity `tCO2e = quantity × unit multiplier × factor / 1000`; spend `tCO2e = 
 | Hidden refrigerant | GL 8111 service line with "дозаправка R404A 11.1 кг" → kg parsed from text × GWP |
 | Diesel for hired carrier | Scope 3 Cat. 4, not Scope 1 |
 | Credit notes | negative quantity kept → negative tCO2e (never `abs()`) |
-| PET preforms in шт | pieces × grams in the item name / 1000 |
+| PET preforms in шт | pieces × verified kg per piece |
 
 ## Safeguards for unseen data
 
-- **No silent failures.** An unreadable or missing quantity stays empty (never 0) and gets
-  `review_flag = quantity unreadable`. If a milk/fuel/energy/packaging/chemicals/waste rule matches but
-  can't convert the line's unit, the line falls through as before and, if it ends up spend-based, gets
-  `activity item computed by spend: unit not covered`. `run.py` prints a count for both flags.
-- **Number parsing** accepts thousand separators ("1 500 кг", including no-break spaces) and Latin units (kg, km, g).
-- **Piece weights** (unit шт): `packaging_specs.csv` by item name → grams written in the name → the
-  rules.yaml default. The audit reason says which source was used.
-- **Mixed flights**: if legs use different factors (e.g. NQZ-ALA domestic + ALA-FRA long-haul), ef_id is
-  `EF_FLIGHT_DOM_PKM+EF_FLIGHT_LONG_PKM` and the reason lists km per leg.
+- Unknown physical quantities, units, package weights and incomplete flight routes produce
+  a review row. Invalid gross amounts or VAT also block spend calculations. A blocked run
+  writes `outputs/audit.review.csv` and exits before replacing the last completed inventory.
+- Numbers accept space-grouped thousands and comma decimals. A quantity with a written unit
+  can supply a missing unit or confirm the unit column.
+- Piece weights come from the official specification or explicit grams in the item description.
+  A weight-free SKU must identify a unique reference entry.
+- Every flight audit reason lists each leg, ticket count, distance, factor, rate and tonnes.
+  On mixed itineraries the main factor ID identifies the largest absolute contribution.
+  Separately labelled tickets are counted individually. Conflicting ticket counts require review.
+- For a new year, run `python mask_ledger.py` locally on the raw train and test CSVs first.
+  It checks both splits before writing masked files. Keep `mask_mapping.csv` and the raw files private.
 
 ## Outputs
 
