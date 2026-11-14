@@ -98,8 +98,10 @@ def haversine_km(a, b) -> float:
 # a route separator, so separate tickets never acquire a fictitious transfer leg.
 ROUTE_JOIN = re.compile(r"\s*(?:->|[-‐‑–—→/>]|\b(?:to|via|до|через)\b)\s*|\s+", re.I)
 IATA = re.compile(r"\b[a-z]{3}\b", re.I | re.ASCII)
+# A separately listed ticket carries a number ("Ticket 1:", "билет №2"). The bare word is not a
+# label: "Авиабилет ALA-NQZ" or "Each ticket is for one passenger" must not count as tickets.
 TICKET_LABEL = re.compile(
-    r"\b(?:ticket|авиабилет|билет)\b(?:\s*(?:no\.?\s*|[#№]\s*)?\d+)?\s*:?", re.I
+    r"\b(?:ticket|авиабилет|билет)\s*(?:no\.?\s*|[#№]\s*)?\d+\s*:?", re.I
 )
 AIRPORT_PAIR = re.compile(r"(?=\b([a-z]{3})\s*(?:->|[-‐‑–—→/>])\s*([a-z]{3})\b)", re.I | re.ASCII)
 TICKET_BOUNDARY = re.compile(
@@ -138,10 +140,8 @@ def ticket_counts(text, legs, quantity, airports):
     """A ledger quantity applies to the itinerary. Individually listed tickets count once each."""
     labels = list(TICKET_LABEL.finditer(text))
     if len(labels) < 2:
-        # Several passengers can share a connected itinerary. A quantity on
-        # disconnected, unlabelled tickets cannot safely be allocated per route.
-        if abs(quantity) > 1 and any(a[1] != b[0] for a, b in zip(legs, legs[1:])):
-            return None
+        # No separately numbered tickets: the quantity is the party size and flies every listed leg,
+        # connected or not ("ALA-NQZ; DXB-FRA", 2 tickets -> 2 passengers on each leg).
         return [quantity] * len(legs)
     if abs(quantity) != len(labels):
         return None

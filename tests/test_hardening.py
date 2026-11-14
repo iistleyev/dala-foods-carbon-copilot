@@ -250,10 +250,36 @@ def test_ticket_quantities_and_unknown_endpoints(ctx):
     res, _ = run_row(ctx, row)
     legs = json.loads(res["reason"].split("Leg calculations: ")[1])
     assert [leg["tickets"] for leg in legs] == [1, 1, 1]
-    for route, qty in [("ALA-NQZ-XYZ", 1), ("NQZ-ALA-FRA, ticket 1: IST-FRA; ticket 2: FRA-IST", 3),
-                       ("ALA-NQZ; FRA-IST", 2)]:
+    for route, qty in [("ALA-NQZ-XYZ", 1), ("NQZ-ALA-FRA, ticket 1: IST-FRA; ticket 2: FRA-IST", 3)]:
         res, _ = run_row(ctx, make_row("Flight " + route, "7212", "билет", qty))
         assert res["method"] == "review"
+
+
+def test_unnumbered_party_flies_every_listed_leg(ctx):
+    # No numbered tickets: the quantity is the party size on each leg, connected or not.
+    res, _ = run_row(ctx, make_row("Flight ALA-NQZ; FRA-IST. Party of 2", "7212", "билет", 2))
+    legs = json.loads(res["reason"].split("Leg calculations: ")[1])
+    assert [(leg["from"], leg["to"], leg["tickets"]) for leg in legs] == [("ALA", "NQZ", 2), ("FRA", "IST", 2)]
+
+
+def test_the_word_ticket_alone_is_not_a_ticket_label(ctx):
+    row = make_row("Flight: Ticket 1: ALA-NQZ-ALA; Ticket 2: CIT-ALA. Each ticket is for one passenger.",
+                   "7212", "билет", 2)
+    res, _ = run_row(ctx, row)
+    legs = json.loads(res["reason"].split("Leg calculations: ")[1])
+    assert [leg["tickets"] for leg in legs] == [1, 1, 1]
+
+
+@pytest.mark.parametrize("unit", ["service", "Services", "услуга"])
+def test_english_and_russian_service_units_parse_refrigerant_kg(ctx, unit):
+    res, _ = run_row(ctx, make_row("Maintenance; refrigerant R134a refill 3.75 kg", "8111", unit, 1))
+    assert res["method"] == "activity" and res["activity_qty"] == pytest.approx(3.75)
+
+
+@pytest.mark.parametrize("unit", ["тыс. шт", "тыс.шт"])
+def test_thousands_of_pieces(ctx, unit):
+    res, _ = run_row(ctx, make_row("Крышка HDPE 38 мм", "1311", unit, "7,5"))
+    assert res["activity_qty"] == pytest.approx(7500 * 0.0025) and "thousands of pieces" in res["reason"]
 
 
 def test_incomplete_run_exports_diagnostic_only(ctx, tmp_path, monkeypatch):

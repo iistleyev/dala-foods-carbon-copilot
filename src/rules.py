@@ -111,6 +111,9 @@ def apply_rule(rule: dict, row, factors: dict, airports: dict, packaging: dict):
     if unit == "г" and "кг" in units:
         q, unit = q / 1000, "кг"
         reason += " Ledger grams converted to kg."
+    if unit == "тыс. шт" and "шт" in units:  # thousands of pieces -> pieces, then piece weight
+        q, unit = q * 1000, "шт"
+        reason += " Ledger thousands of pieces converted to pieces."
     if unit not in units:
         return None, UNIT_NOT_COVERED
     if units[unit] == "package_weight":
