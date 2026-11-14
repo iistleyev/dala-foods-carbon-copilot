@@ -15,6 +15,7 @@ pip install -r requirements.txt
 python run.py        # ~3 s: prints train score, worst lines, confusion matrix; writes outputs/
 python analysis.py   # answers for the bank, the retailer and the CFO (reads outputs/audit.csv)
 python report.py     # everything in one spreadsheet: outputs/carbon_report.xlsx
+streamlit run app.py # live demo page for a new ledger file (see Demo)
 python -m pytest     # robustness tests
 ```
 
@@ -98,6 +99,37 @@ activity `tCO2e = quantity × unit multiplier × factor / 1000`; spend `tCO2e = 
   recomputation), Review queue, Loan scenarios, Product footprint, Cost model, Injection lines, Factors.
   Totals and scenarios are Excel formulas: change a yellow assumption cell and the sheet recalculates.
   Values appear when the file is opened in Excel (openpyxl does not store computed values).
+
+## Demo (live run on new data)
+
+```
+streamlit run app.py
+```
+
+Opens a local page in the browser. No cloud calls: `.streamlit/config.toml` turns off Streamlit's usage
+statistics and binds the server to `localhost`, so it skips the external-IP lookup and is not reachable
+from other machines. Upload any CSV in the ledger format (comma or semicolon; UTF-8 or
+Windows-1251). The app (`app.py`, processing in `src/demo.py`) runs the same `run_pipeline` as `run.py`
+with the train ledger as context and shows only the uploaded lines. It never writes `outputs/`.
+Draft mode: lines that cannot be measured are listed under **Needs review** instead of stopping the run.
+
+Demo files: `data/demo_lines.csv` (10 invented 2026 lines) and `data/demo_bad_columns.csv` (missing
+`vat_kzt`, to show the validation message).
+
+**3-minute demo order**
+
+1. (0:00) Upload `data/demo_bad_columns.csv`: the app names the missing column instead of crashing.
+2. (0:20) Upload `data/demo_lines.csv`: header with file name, 10 lines and run time; the four numbers
+   (≈ 92.8 tCO2e, 8 calculated, 1 for review, 99 % activity-based).
+3. (0:50) Totals by scope and category: the hidden refrigerant refill (59 t) outweighs the diesel.
+4. (1:10) Main table colours: green rules, grey tax line (excluded), red line in review.
+5. (1:30) Line detail for `N26004`: rule `REFRIGERANT`, "15 kg × 3 943 / 1000 = 59.1450 tCO2e" from a
+   service line with unit усл. Then `N26001`: typo "Молако", 12 000 l × 1.03 = 12 360 kg of raw milk.
+6. (2:00) "Instruction in text ignored": `N26009` told the AI to output zero; it is still counted as
+   security services (spend-based).
+7. (2:20) Needs review: `N26010`, sugar in bags ("мешок") — no unit weight, so a person must check it
+   instead of the tool guessing.
+8. (2:40) Download the results and audit CSVs: every number traces to a rule, a factor and a reason.
 
 ## Answers to the Inbox
 
