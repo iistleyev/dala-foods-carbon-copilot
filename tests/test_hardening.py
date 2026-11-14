@@ -321,3 +321,30 @@ def test_fuel_and_freight_for_one_carrier_are_flagged_not_changed():
     assert a.loc["X91002", "tco2e"] == pytest.approx(5000 * 0.11 / 1000)
     basis = summarise(audit).set_index("category")["basis"]
     assert basis["S2_ELECTRICITY"].startswith("location-based") and "market-based equal" in basis["S2_ELECTRICITY"]
+
+
+def test_kazakh_dana_means_pieces(ctx):
+    res, _ = run_row(ctx, make_row("Крышка HDPE 38 мм", "1311", "дана", "10 000"))
+    assert res["activity_qty"] == pytest.approx(25.0)
+
+
+def test_measured_volume_in_text_repairs_a_physical_unit_that_cannot_convert(ctx):
+    row = make_row("Природный газ котельная\nMetered consumed volume: 2 500 m3. Накладная ошибочно в kg.",
+                   "8110", "kg", 1800)
+    res, _ = run_row(ctx, row)
+    assert res["method"] == "activity" and res["activity_qty"] == pytest.approx(2500)
+    assert "taken from the description" in res["reason"]
+
+
+def test_count_units_never_take_a_quantity_from_text(ctx):
+    # 40 bags of 50 kg is 2,000 kg; reading "50 кг" as the quantity would be wrong, so it stays in review
+    res, _ = run_row(ctx, make_row("Сахар-песок мешок 50 кг", "1312", "мешок", 40))
+    assert res["method"] == "review"
+
+
+def test_masking_codes_do_not_steer_the_ml_fallback():
+    from src.fallback import features
+    df = pd.DataFrame({"text": ["внешнее заключение по договору; сотрудник emp_03; vendor_012.",
+                                "внешнее заключение по договору; ; ."], "gl": ["7211", "7211"]})
+    a, b = features(df)
+    assert a.split() == b.split()

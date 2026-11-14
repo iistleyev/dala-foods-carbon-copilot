@@ -3,6 +3,8 @@
 TF-IDF on character 2-4-grams of (cleaned description + GL account) -> LogisticRegression over
 the spend-based factors seen in train. It can only return a spend factor (never EXCLUDE), and the
 category follows from that factor, so planted text cannot push a line to 0 through this path."""
+import re
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
@@ -16,8 +18,17 @@ SPEND_CATEGORY = {
 }
 
 
+# Masking codes, the name-field words in front of them and legal designators say nothing about what
+# was bought, but their letters can steer the char n-gram model ("сотрудник EMP_04" looks like
+# "питание сотрудников", the caterer). They are removed before the model sees the text.
+NOT_THE_PURCHASE = re.compile(
+    r"(?:\b(?:employee|passenger|travell?er|supplier|provider|сотрудник|пассажир|қызметкер|поставщик)"
+    r"\s*[:=]?\s*)?\b(?:vendor|emp)_\d+\b|\b(?:ип|тоо|ао|too|llp|llc)\b")
+
+
 def features(df):
-    return (df["text"] + " gl" + df["gl"] + " gl" + df["gl"]).tolist()
+    text = df["text"].str.replace(NOT_THE_PURCHASE, " ", regex=True)
+    return (text + " gl" + df["gl"] + " gl" + df["gl"]).tolist()
 
 
 class SpendFallback:

@@ -5,7 +5,10 @@ from pathlib import Path
 
 import yaml
 
-from .convert import flight_legs, parse_km, piece_weight_kg, refrigerant_ef, ticket_counts, unit_multiplier
+from .convert import (UNIT_ALIASES, flight_legs, parse_km, parse_measure, piece_weight_kg, refrigerant_ef,
+                      ticket_counts, unit_multiplier)
+
+PHYSICAL_UNITS = set(UNIT_ALIASES.values())  # kg, t, l, m3, kWh, Gcal ...: measured, not counted
 
 SPEND_UNIT = "1000 KZT net"
 
@@ -115,7 +118,11 @@ def apply_rule(rule: dict, row, factors: dict, airports: dict, packaging: dict):
         q, unit = q * 1000, "шт"
         reason += " Ledger thousands of pieces converted to pieces."
     if unit not in units:
-        return None, UNIT_NOT_COVERED
+        measured = measured_in_text(text, unit, units)
+        if measured is None:
+            return None, UNIT_NOT_COVERED
+        (q, unit), was = measured, unit
+        reason += f" Ledger unit {was} can't be converted to {unit}; quantity {q:g} {unit} taken from the description."
     if units[unit] == "package_weight":
         mult, source = piece_weight_kg(text, packaging)
         if source:
@@ -130,6 +137,18 @@ def apply_rule(rule: dict, row, factors: dict, airports: dict, packaging: dict):
     qty = q * mult  # negative quantity (credit note) stays negative: never abs()
     return result(cat, ef_id, qty, factors[ef_id]["unit"], "activity",
                   qty * factors[ef_id]["value"] / 1000.0, rid, reason), None
+
+
+def measured_in_text(text, ledger_unit, units):
+    """(quantity, unit) written in the description, used only when the ledger gives a PHYSICAL unit that
+    this rule cannot convert (gas invoiced in kg: no density in the case) and the text states exactly one
+    quantity in a unit the rule accepts ("metered 2 500 m3"). Count units (мешок, уп) stay in review:
+    "мешок 50 кг" x 40 bags is 2,000 kg, not 50."""
+    if ledger_unit not in PHYSICAL_UNITS:
+        return None
+    found = {(v, u) for u, spec in units.items() if isinstance(spec, (int, float))
+             for v in [parse_measure(text, u)] if v is not None}
+    return found.pop() if len(found) == 1 else None
 
 
 def classify(row, rules: list, factors: dict, airports: dict, packaging: dict | None = None):
