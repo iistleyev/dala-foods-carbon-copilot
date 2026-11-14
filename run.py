@@ -9,7 +9,7 @@ import yaml
 
 from src.duplicates import (FREIGHT_OVERLAP_FLAG, FUEL_OVERLAP_FLAG, find_carrier_overlap,
                             find_duplicates)
-from src.fallback import LOW_CONFIDENCE, SpendFallback
+from src.fallback import LOW_CONFIDENCE, SpendFallback, possible_typo
 from src.load import ROOT, load_airports, load_factors, load_ledgers, load_packaging
 from src.memo import memo_items
 from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result,
@@ -28,6 +28,11 @@ BASIS = {
 }
 AUDIT_COLS = ["line_id", "set", "category", "ef_id", "activity_qty", "activity_unit", "method",
               "tco2e", "rule_id", "reason", "confidence", "review_flag"]
+
+
+def measured_keywords(rules):
+    """Keywords of the physical (measured) items in rules.yaml: milk, fuels, energy, refrigerants..."""
+    return {k for r in rules if r.get("physical_only") for k in r.get("match", [])}
 
 
 def add_flag(res, flag):
@@ -64,6 +69,9 @@ def run_pipeline(df=None):
                                confidence=round(p, 3), flag="new item")
             if p < LOW_CONFIDENCE:
                 add_flag(res, "low confidence")
+            near = possible_typo(df.at[i, "text"], measured_keywords(rules))
+            if near:  # e.g. "Фрион" landing on a spend factor: probably a refrigerant with a typo
+                add_flag(res, f"possible typo of a measured item ('{near}'): check")
             results[i] = res
 
     for i, res in results.items():
@@ -71,6 +79,8 @@ def run_pipeline(df=None):
             add_flag(res, QTY_FLAG)
         if df.at[i, "vat_unreadable"]:
             add_flag(res, "VAT unreadable")
+        if df.at[i, "vat_inconsistent"] and "VAT inconsistent" not in res["review_flag"]:
+            add_flag(res, "VAT inconsistent with gross")
     for i, flag in find_carrier_overlap(df, {i: r["rule_id"] for i, r in results.items()}).items():
         add_flag(results[i], flag)
 

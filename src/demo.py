@@ -45,7 +45,10 @@ def read_upload(data: bytes) -> pd.DataFrame:
     except Exception as exc:  # malformed CSV: report, never crash
         raise UploadError(f"Could not parse the CSV ({type(exc).__name__}): {exc}") from None
     df.columns = [str(c).strip().lstrip("﻿") for c in df.columns]
-    return df
+    if df.empty:
+        return df
+    # rows with nothing in any column (often left at the end of an Excel export) are dropped
+    return df[df.astype(str).apply(lambda col: col.str.strip()).ne("").any(axis=1)].reset_index(drop=True)
 
 
 def missing_columns(df: pd.DataFrame) -> list:

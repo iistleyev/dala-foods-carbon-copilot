@@ -37,14 +37,19 @@ UNIT_MAP = {
 # Deliberately narrow: plain words like "выбросов" or "emissions" ("Услуги по замеру выбросов
 # котельной") describe purchases. Only address forms and commands count:
 INJECTION_RE = re.compile(
-    r"\bignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\b"          # ignore previous ...
+    r"\b(?:ignore|disregard)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\b"  # ignore previous ...
+    r"|\bигнорир\w*\b[^.;\n]{0,30}?\b(?:предыдущ|прошл|все|правил|инструкц)\w*"          # игнорируй инструкции
+    r"|\bалдыңғы\s+нұсқау\w*|\bнұсқау\w*\s+елеме\w*"                                   # KZ: ignore previous instructions
     r"|\b(?:system|assistant|ai|ии)\s+(?:note|instruction|message|prompt)s?\b"          # SYSTEM NOTE, Assistant instruction
     r"|(?-i:\bSYSTEM\b)\s*:|\bassistant\s*:"                                           # SYSTEM: / assistant:
     r"|\bnote\s+to\s+the\s+(?:model|ai|assistant)\b"                                   # Note to the model
-    r"|\bии-ассистент\w*|\bассистенту\b"                                               # ИИ-ассистенту
+    r"|\bии-ассистент\w*|\bассистенту\b|\bжи\s+көмекші\w*|\bжасанды\s+интеллект\w*"    # ИИ-ассистенту / ЖИ көмекшісіне
     r"|\b(?:output|return|set|classify|установи|поставь|укажи)\b[^.;\n]{0,60}?"         # a command to output
     r"(?:\bexclude\b|\b0\s*(?:выброс\w*|emissions?|t?co2e)\b|\bzero\b)"                 #   EXCLUDE / zero emissions
-    r"|\b(?:t?co2e|emissions?|выброс\w*)\s*[=:]\s*0\b",                                # tco2e = 0
+    r"|\b(?:t?co2e|emissions?|выброс\w*)[\"']?\s*[=:]\s*[\"']?0\b"                      # tco2e = 0, "tco2e": 0
+    r"|[\"']?\b(?:category|ef_id|rule_id)\b[\"']?\s*[=:]"                             # category: / rule_id= (output fields)
+    r"|\b(?:auditor|аудитор)\w*\b[^.;\n]{0,80}?\b(?:exclud|исключ)\w*"                  # "auditor says exclude"
+    r"|\b(?:exclud|исключ)\w*\b[^.;\n]{0,60}?\b(?:line|inventory|строк|расчет|инвентаризац)\w*",  # exclude this line
     re.IGNORECASE,
 )
 
@@ -112,7 +117,7 @@ def parse_quantity(values: pd.Series) -> tuple[pd.Series, pd.Series]:
 def normalise(df: pd.DataFrame) -> pd.DataFrame:
     """Add the helper columns the rules use (works on any ledger-shaped frame)."""
     df = df.copy()
-    df["gl"] = df["gl_account"].fillna("").astype(str).str.strip()
+    df["gl"] = df["gl_account"].fillna("").astype(str).str.strip().str.replace(r"^(\d+)\.0+$", r"\1", regex=True)
     clean = df["description"].map(strip_injection)
     df["text"] = clean.map(lambda x: norm_text(x[0]))
     df["injection"] = clean.map(lambda x: x[1])
@@ -132,6 +137,9 @@ def normalise(df: pd.DataFrame) -> pd.DataFrame:
     df["vat_kzt"], df["vat_unreadable"] = parse_quantity(df["vat_kzt"])
     df["amount_kzt_gross"], _ = parse_quantity(df["amount_kzt_gross"])
     df["net_kzt"] = df["amount_kzt_gross"] - df["vat_kzt"]
+    # VAT with the opposite sign to the gross amount, or larger than it, gives a wrong net amount.
+    g, v = df["amount_kzt_gross"], df["vat_kzt"]
+    df["vat_inconsistent"] = ((g * v) < 0) | (v.abs() > g.abs())
     return df
 
 

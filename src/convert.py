@@ -28,7 +28,13 @@ def _num(s: str) -> float:
 
 
 def parse_number(s):
+    """'1 500,5' / '1500.5' / '1,500.5' / '1.500,5' -> float; anything unreadable -> None.
+    A lone comma is a decimal comma (Kazakh/Russian style); with both separators the first is thousands."""
     s = str(s).strip()
+    if re.fullmatch(r"[+-]?\d{1,3}(?:,\d{3})+\.\d+", s):
+        return float(s.replace(",", ""))
+    if re.fullmatch(r"[+-]?\d{1,3}(?:\.\d{3})+,\d+", s):
+        return float(s.replace(".", "").replace(",", "."))
     return _num(s) if re.fullmatch(NUM, s) else None
 
 

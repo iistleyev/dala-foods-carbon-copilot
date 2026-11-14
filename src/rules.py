@@ -53,6 +53,9 @@ def unresolved(category, ef_id, rule_id, reason, flag):
 def spend_result(row, ef_id, category, factors, rule_id, reason, confidence=1.0, flag=""):
     if not math.isfinite(row["net_kzt"]):
         return unresolved(category, ef_id, rule_id, "Check gross amount and recorded VAT.", "net spend unreadable")
+    if row.get("vat_inconsistent", False):  # net = gross - VAT would be inflated or change sign
+        return unresolved(category, ef_id, rule_id, "VAT contradicts the gross amount (sign or size).",
+                          "VAT inconsistent with gross")
     qty = row["net_kzt"] / 1000.0
     return result(category, ef_id, qty, SPEND_UNIT, "spend", qty * factors[ef_id]["value"] / 1000.0,
                   rule_id, reason, confidence, flag)

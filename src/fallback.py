@@ -3,6 +3,7 @@
 TF-IDF on character 2-4-grams of (cleaned description + GL account) -> LogisticRegression over
 the spend-based factors seen in train. It can only return a spend factor (never EXCLUDE), and the
 category follows from that factor, so planted text cannot push a line to 0 through this path."""
+import difflib
 import re
 
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -10,6 +11,21 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 
 LOW_CONFIDENCE = 0.5
+TYPO_CUTOFF = 0.8  # "фрион" vs "фреон" = 0.8
+
+
+def possible_typo(text: str, keywords) -> str | None:
+    """A word that is a near miss of a measured-item keyword ("фрион" ~ "фреон"), or None.
+    Only single-word keywords of 5+ letters are compared; words are cut to the keyword's length."""
+    stems = [k for k in keywords if len(k) >= 5 and " " not in k]
+    for word in re.findall(r"[^\W\d_]{4,}", text.lower()):
+        for stem in stems:
+            if stem in word:
+                continue
+            ratio = max(difflib.SequenceMatcher(None, word[:len(stem) + d], stem).ratio() for d in (0, 1))
+            if ratio >= TYPO_CUTOFF:
+                return stem
+    return None
 
 # Category implied by each spend factor (from the typical_category column of the factor file).
 SPEND_CATEGORY = {
