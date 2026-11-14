@@ -1,0 +1,48 @@
+﻿ef_id,name,unit,kgCO2e_per_unit,typical_category,note
+EF_DIESEL_L,"Diesel fuel, combustion",l,2.68,S1_MOBILE / S1_STATIONARY,IPCC 2006 default 74.1 tCO2/TJ; density 0.84 kg/l
+EF_DIESEL_T,"Diesel fuel, combustion",t,3190.0,S1_MOBILE,Per tonne
+EF_PETROL_L,"Petrol (AI-92/95), combustion",l,2.29,S1_MOBILE,Density 0.745 kg/l
+EF_LPG_KG,"LPG, combustion",kg,2.98,S1_MOBILE,Density 0.54 kg/l
+EF_NG_M3,"Natural gas, combustion",m3,1.91,S1_STATIONARY,NCV 34 MJ/m3
+EF_R404A_KG,Refrigerant R-404A released,kg,3943.0,S1_FUGITIVE,GWP AR5
+EF_R134A_KG,Refrigerant R-134a released,kg,1300.0,S1_FUGITIVE,GWP AR5
+EF_R410A_KG,Refrigerant R-410A released,kg,1924.0,S1_FUGITIVE,GWP AR5
+EF_R744_KG,Refrigerant R-744 (CO2) released,kg,1.0,S1_FUGITIVE,GWP 1
+EF_GRID_KZ_KWH,"Grid electricity, Kazakhstan (location-based)",kWh,0.8,S2_ELECTRICITY,Organiser value for this case
+EF_HEAT_GCAL,"Purchased heat, Almaty district heating",Gcal,300.0,S2_HEAT,Organiser value for this case; 1 Gcal = 4.1868 GJ
+EF_MILK_KG,"Raw cow milk, farm gate",kg,1.3,S3_C1_GOODS,Illustrative; density 1.03 kg/l
+EF_PET_KG,"PET (preforms, bottles)",kg,2.6,S3_C1_GOODS,"Virgin PET, cradle-to-gate"
+EF_HDPE_KG,"HDPE / LDPE (caps, film)",kg,1.9,S3_C1_GOODS,
+EF_CARTON_KG,Aseptic composite carton,kg,1.2,S3_C1_GOODS,
+EF_PAPERBOARD_KG,Corrugated board / paperboard,kg,0.95,S3_C1_GOODS,
+EF_ALU_FOIL_KG,Aluminium foil lids,kg,9.0,S3_C1_GOODS,Primary aluminium
+EF_SUGAR_KG,Sugar,kg,0.6,S3_C1_GOODS,
+EF_FRUIT_KG,Fruit fillings / purees,kg,1.0,S3_C1_GOODS,
+EF_NAOH_KG,Caustic soda (NaOH),kg,1.3,S3_C1_GOODS,
+EF_ACID_KG,Acid cleaner (nitric-based),kg,1.5,S3_C1_GOODS,
+EF_WATER_M3,Mains water supply,m3,0.35,S3_C1_GOODS,
+EF_ROAD_TKM,"Road freight, articulated truck",tkm,0.11,S3_C4_TRANSPORT,
+EF_REEFER_TKM,"Road freight, refrigerated truck",tkm,0.14,S3_C4_TRANSPORT,
+EF_RAIL_TKM,Rail freight,tkm,0.03,S3_C4_TRANSPORT,
+EF_WASTE_LANDFILL_T,Mixed waste to landfill,t,580.0,S3_C5_WASTE,Bulk density of mixed waste: 0.2 t/m3
+EF_WASTEWATER_M3,Industrial wastewater treatment (utility),m3,0.7,S3_C5_WASTE,
+EF_FLIGHT_DOM_PKM,"Flight, domestic (within Kazakhstan)",pkm,0.25,S3_C6_TRAVEL,Economy; incl. uplift
+EF_FLIGHT_SHORT_PKM,"Flight, international < 3,700 km",pkm,0.16,S3_C6_TRAVEL,Economy
+EF_FLIGHT_LONG_PKM,"Flight, international >= 3,700 km",pkm,0.15,S3_C6_TRAVEL,Economy
+EF_HOTEL_NIGHT,Hotel stay,room-night,25.0,S3_C6_TRAVEL,
+SP_TAXI,Taxi services (spend),1000 KZT net,0.5,S3_C6_TRAVEL,"Spend-based, net of VAT"
+SP_SERVICES_PROF,"Professional services: consulting, audit, legal, marketing",1000 KZT net,0.25,S3_C1_GOODS,"Spend-based, net of VAT"
+SP_IT,IT services and software,1000 KZT net,0.15,S3_C1_GOODS,
+SP_MAINTENANCE,Repair and maintenance services,1000 KZT net,0.6,S3_C1_GOODS,
+SP_SPARE_PARTS,Spare parts and consumables for machinery,1000 KZT net,1.2,S3_C1_GOODS,
+SP_OFFICE,Office supplies,1000 KZT net,0.9,S3_C1_GOODS,
+SP_CLEANING_SECURITY,Cleaning and security services,1000 KZT net,0.3,S3_C1_GOODS,
+SP_FINANCIAL,Banking and insurance services,1000 KZT net,0.1,S3_C1_GOODS,
+SP_RENT,Rent of premises,1000 KZT net,0.3,S3_C1_GOODS,
+SP_TELECOM,Telecom services,1000 KZT net,0.2,S3_C1_GOODS,
+SP_CATERING,Catering and food services,1000 KZT net,1.0,S3_C1_GOODS,
+SP_INGREDIENTS_OTHER,"Other food ingredients (cultures, stabilisers)",1000 KZT net,1.1,S3_C1_GOODS,
+SP_VEHICLES,Vehicles (capital),1000 KZT net,1.1,S3_C2_CAPITAL,
+SP_MACHINERY,Machinery and equipment (capital),1000 KZT net,1.0,S3_C2_CAPITAL,
+SP_CONSTRUCTION,Construction works (capital),1000 KZT net,1.5,S3_C2_CAPITAL,
+SP_FREIGHT_ROAD,Road freight services (spend),1000 KZT net,1.4,S3_C4_TRANSPORT,Use only when tonne-km unknown

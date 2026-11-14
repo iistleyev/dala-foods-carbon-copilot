@@ -1,0 +1,12 @@
+﻿category,meaning
+S1_STATIONARY,"Scope 1 - fuel burned in boilers, furnaces, generators"
+S1_MOBILE,Scope 1 - fuel in vehicles and mobile machinery the company owns or controls
+S1_FUGITIVE,Scope 1 - refrigerant leaks (refills = leaks)
+S2_ELECTRICITY,Scope 2 - purchased electricity
+S2_HEAT,Scope 2 - purchased heat/steam
+S3_C1_GOODS,Scope 3 Cat. 1 - purchased goods and services
+S3_C2_CAPITAL,Scope 3 Cat. 2 - capital goods
+S3_C4_TRANSPORT,Scope 3 Cat. 4 - upstream transport paid by the company (third-party carriers)
+S3_C5_WASTE,Scope 3 Cat. 5 - waste and wastewater
+S3_C6_TRAVEL,Scope 3 Cat. 6 - business travel
+EXCLUDE,"Not an emission-relevant purchase, or must not be counted (e.g. double counting)"

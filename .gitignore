@@ -1,0 +1,13 @@
+# Real names: never commit. The pipeline only needs the *_masked.csv ledgers.
+mask_mapping.csv
+ledger_train.csv
+ledger_test.csv
+DalaFoods_DataPack.xlsx
+
+# Python / tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.claude/

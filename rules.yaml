@@ -1,0 +1,378 @@
+# Rule table for the Dala Foods carbon pipeline. FIRST MATCH WINS, top to bottom.
+#
+# Fields:
+#   id        rule_id written to the audit file
+#   gl        list of GL accounts the line must have (omit = any)
+#   unit      list of unit codes the line must have (omit = any)
+#   match     list of lower-case substrings; at least one must appear in the description (omit = any)
+#   category  one of the 11 categories in categories.csv
+#   ef_id     factor id from emission_factors.csv; special values:
+#               by_gas  -> refrigerant factor picked from the gas name (R404A, R134A, R410A, R744)
+#   method    activity (default) | spend | excluded | flight | rail
+#   units     activity rules: unit code -> multiplier that converts the ledger quantity to the
+#             factor's unit. Values: a number, a fraction like "1/4.1868", kg_in_text, grams_in_text.
+#             A line whose unit is not listed does not match the rule.
+#   reason    one short sentence for the audit file
+#
+# Spend method: activity = (gross - VAT) / 1000 thousand KZT; tCO2e = activity * factor / 1000.
+
+# ---------------------------------------------------------------- 3. GL excludes
+# Runs before the milk rule: "Предоплата за молоко (аванс)" is GL 1610 and must not count as milk.
+- id: EXCL_GL
+  gl: ["3110", "3150", "1610", "7480", "7216"]
+  category: EXCLUDE
+  method: excluded
+  reason: GL account is taxes, social contributions, advances, fines or per diem - no emissions purchased.
+
+# ---------------------------------------------------------------- 4. GL-routed
+# Freight GL 7110 is checked before any keyword: "Ж/д перевозка сухого молока" contains a milk word.
+- id: FREIGHT_RAIL
+  gl: ["7110"]
+  unit: ["т"]
+  match: ["ж/д", "жд ", "железнодорож", "rail"]
+  category: S3_C4_TRANSPORT
+  ef_id: EF_RAIL_TKM
+  method: rail
+  reason: Rail freight; tonnes x distance parsed from the description.
+
+- id: FREIGHT_ROAD_REEFER
+  gl: ["7110"]
+  match: ["рефрижератор", "reefer"]
+  category: S3_C4_TRANSPORT
+  ef_id: EF_REEFER_TKM
+  units: {ткм: 1}
+  reason: Refrigerated road freight reported in tonne-km.
+
+- id: FREIGHT_ROAD_TKM
+  gl: ["7110"]
+  category: S3_C4_TRANSPORT
+  ef_id: EF_ROAD_TKM
+  units: {ткм: 1}
+  reason: Road freight reported in tonne-km.
+
+- id: FREIGHT_SPEND
+  gl: ["7110"]
+  match: ["транспортн", "доставк", "көлік", "перевоз", "логист"]
+  category: S3_C4_TRANSPORT
+  ef_id: SP_FREIGHT_ROAD
+  method: spend
+  reason: Third-party freight without tonne-km; spend-based.
+
+- id: TRAVEL_FLIGHT
+  gl: ["7212"]
+  match: ["авиабилет", "авиа", "flight"]
+  category: S3_C6_TRAVEL
+  method: flight
+  reason: Flight; great-circle distance per leg between IATA codes x tickets.
+
+- id: TRAVEL_HOTEL
+  gl: ["7212"]
+  match: ["гостиниц", "проживание", "отел", "hotel"]
+  category: S3_C6_TRAVEL
+  ef_id: EF_HOTEL_NIGHT
+  units: {сут: 1}
+  reason: Hotel stay; quantity is room-nights.
+
+- id: TRAVEL_TAXI
+  gl: ["7212"]
+  match: ["такси", "taxi"]
+  category: S3_C6_TRAVEL
+  ef_id: SP_TAXI
+  method: spend
+  reason: Taxi; spend-based.
+
+- id: CAPEX_VEHICLES
+  gl: ["2411"]
+  category: S3_C2_CAPITAL
+  ef_id: SP_VEHICLES
+  method: spend
+  reason: Vehicle purchase booked as a fixed asset; spend-based capital good.
+
+- id: CAPEX_CONSTRUCTION
+  gl: ["2412"]
+  category: S3_C2_CAPITAL
+  ef_id: SP_CONSTRUCTION
+  method: spend
+  reason: Construction in progress; spend-based capital good.
+
+- id: CAPEX_MACHINERY
+  gl: ["2410"]
+  category: S3_C2_CAPITAL
+  ef_id: SP_MACHINERY
+  method: spend
+  reason: Machinery booked as a fixed asset; spend-based capital good.
+
+# ---------------------------------------------------------------- 5. Refrigerants
+# A refill replaces gas that leaked, so refilled kg = released kg. Service lines (unit усл)
+# carry the kg in the text, e.g. "дозаправка R404A 11.1 кг".
+- id: REFRIGERANT
+  gl: ["1330", "8111"]
+  match: ["r404", "r-404", "r134", "r-134", "r410", "r-410", "r744", "r-744", "фреон", "хладагент", "дозаправк"]
+  category: S1_FUGITIVE
+  ef_id: by_gas
+  units: {кг: 1, усл: kg_in_text}
+  reason: Refrigerant refill = leak; kg x GWP of the named gas.
+
+# ---------------------------------------------------------------- 6. Energy
+- id: ELECTRICITY
+  gl: ["8110", "7210"]
+  match: ["электроэнерг", "электр энерг", "электр қуат", "electricity"]
+  category: S2_ELECTRICITY
+  ef_id: EF_GRID_KZ_KWH
+  units: {кВт·ч: 1, МВт·ч: 1000}
+  reason: Purchased grid electricity converted to kWh.
+
+- id: DISTRICT_HEAT
+  gl: ["7210", "8110"]
+  match: ["тепловая энерг", "теплоэнерг", "жылу", "heat"]
+  category: S2_HEAT
+  ef_id: EF_HEAT_GCAL
+  units: {Гкал: 1, ГДж: "1/4.1868"}
+  reason: Purchased district heat converted to Gcal (1 Gcal = 4.1868 GJ).
+
+# ---------------------------------------------------------------- 7. Fuels
+# Diesel bought for a hired carrier is burned in someone else's truck -> Scope 3 transport.
+- id: FUEL_DIESEL_HIRED
+  gl: ["1320"]
+  match: ["наемн", "перевозчик"]
+  category: S3_C4_TRANSPORT
+  ef_id: EF_DIESEL_L
+  units: {л: 1}
+  reason: Diesel for a hired third-party carrier - Scope 3 upstream transport.
+
+- id: FUEL_DIESEL_T
+  gl: ["1320"]
+  match: ["дизел", "дт", "diesel"]
+  unit: ["т"]
+  category: S1_MOBILE
+  ef_id: EF_DIESEL_T
+  units: {т: 1}
+  reason: Diesel for own fleet, in tonnes.
+
+- id: FUEL_DIESEL_L
+  gl: ["1320"]
+  match: ["дизел", "дт", "diesel"]
+  category: S1_MOBILE
+  ef_id: EF_DIESEL_L
+  units: {л: 1}
+  reason: Diesel for own fleet, in litres.
+
+- id: FUEL_PETROL
+  gl: ["1320"]
+  match: ["бензин", "жанармай", "аи-92", "аи-95", "аи 92", "аи 95", "petrol", "gasoline"]
+  category: S1_MOBILE
+  ef_id: EF_PETROL_L
+  units: {л: 1}
+  reason: Petrol for own vehicles, in litres.
+
+- id: FUEL_LPG
+  gl: ["1320"]
+  match: ["суг", "сжиженн", "пропан", "lpg"]
+  category: S1_MOBILE
+  ef_id: EF_LPG_KG
+  units: {кг: 1, л: 0.54}
+  reason: LPG for own forklifts converted to kg (0.54 kg/l).
+
+- id: FUEL_NATURAL_GAS
+  gl: ["8110", "7210"]
+  match: ["природный газ", "табиғи газ", "natural gas"]
+  category: S1_STATIONARY
+  ef_id: EF_NG_M3
+  units: {м3: 1, тыс. м3: 1000}
+  reason: Natural gas burned in the own boiler house, in m3.
+
+# ---------------------------------------------------------------- 8. Raw milk
+# GL 1310 is raw materials = raw milk only; descriptions have many typos, so the GL decides.
+- id: RAW_MILK
+  gl: ["1310"]
+  category: S3_C1_GOODS
+  ef_id: EF_MILK_KG
+  units: {кг: 1, л: 1.03, т: 1000}
+  reason: Raw milk converted to kg (1.03 kg/l, 1000 kg/t).
+
+# ---------------------------------------------------------------- 9. Materials
+- id: PACK_PET
+  gl: ["1311"]
+  match: ["пэт", "pet", "преформ"]
+  category: S3_C1_GOODS
+  ef_id: EF_PET_KG
+  units: {кг: 1, т: 1000, шт: grams_in_text}
+  reason: PET preforms in kg; pieces x grams in the item name.
+
+- id: PACK_HDPE
+  gl: ["1311"]
+  match: ["крышк", "қақпақ", "пленк", "стрейч", "hdpe", "ldpe"]
+  category: S3_C1_GOODS
+  ef_id: EF_HDPE_KG
+  units: {кг: 1, т: 1000, шт: 0.0025}
+  reason: HDPE caps / stretch film in kg; caps 2.5 g each.
+
+- id: PACK_CARTON
+  gl: ["1311"]
+  match: ["асептич"]
+  category: S3_C1_GOODS
+  ef_id: EF_CARTON_KG
+  units: {кг: 1, т: 1000, шт: 0.028}
+  reason: Aseptic carton in kg; 28 g per pack.
+
+- id: PACK_CORRUGATED
+  gl: ["1311"]
+  match: ["гофро", "картонн"]
+  category: S3_C1_GOODS
+  ef_id: EF_PAPERBOARD_KG
+  units: {кг: 1, т: 1000, шт: 0.35}
+  reason: Corrugated boxes in kg; 350 g per box.
+
+- id: PACK_FOIL
+  gl: ["1311"]
+  match: ["фольг", "foil"]
+  category: S3_C1_GOODS
+  ef_id: EF_ALU_FOIL_KG
+  units: {кг: 1, т: 1000}
+  reason: Aluminium foil lids in kg.
+
+- id: ING_SUGAR
+  gl: ["1312"]
+  match: ["сахар", "қант", "sugar"]
+  category: S3_C1_GOODS
+  ef_id: EF_SUGAR_KG
+  units: {кг: 1, т: 1000}
+  reason: Sugar in kg.
+
+- id: ING_FRUIT
+  gl: ["1312"]
+  match: ["фрукт", "пюре", "ягод", "fruit"]
+  category: S3_C1_GOODS
+  ef_id: EF_FRUIT_KG
+  units: {кг: 1, т: 1000}
+  reason: Fruit filling / puree in kg.
+
+- id: CHEM_CAUSTIC
+  gl: ["1313"]
+  match: ["каустик", "каустич", "натр едкий", "едкий натр", "naoh"]
+  category: S3_C1_GOODS
+  ef_id: EF_NAOH_KG
+  units: {кг: 1, т: 1000}
+  reason: Caustic soda (CIP cleaning) in kg.
+
+- id: CHEM_ACID
+  gl: ["1313"]
+  match: ["кислотн", "азотн", "acid"]
+  category: S3_C1_GOODS
+  ef_id: EF_ACID_KG
+  units: {кг: 1, т: 1000}
+  reason: Acid cleaner in kg.
+
+# ---------------------------------------------------------------- 10. Water and waste
+- id: WATER_SUPPLY
+  gl: ["8110", "7210"]
+  match: ["водоснабжен", "сумен жабдықта"]
+  category: S3_C1_GOODS
+  ef_id: EF_WATER_M3
+  units: {м3: 1, тыс. м3: 1000}
+  reason: Mains water supply in m3.
+
+- id: WASTEWATER
+  gl: ["8110", "7210"]
+  match: ["водоотведен", "промсток", "канализац"]
+  category: S3_C5_WASTE
+  ef_id: EF_WASTEWATER_M3
+  units: {м3: 1, тыс. м3: 1000}
+  reason: Industrial wastewater treated by the utility, in m3.
+
+- id: WASTE_LANDFILL
+  gl: ["7210", "8110"]
+  match: ["тбо", "полигон", "мусор", "отход"]
+  category: S3_C5_WASTE
+  ef_id: EF_WASTE_LANDFILL_T
+  units: {м3: 0.2, т: 1}
+  reason: Mixed waste to landfill; m3 x 0.2 t/m3.
+
+# ---------------------------------------------------------------- 11. Spend keywords
+- id: SP_PROF
+  gl: ["7211"]
+  match: ["консалт", "аудит", "юрид", "реклам", "marketing", "research"]
+  category: S3_C1_GOODS
+  ef_id: SP_SERVICES_PROF
+  method: spend
+  reason: Professional services; spend-based.
+
+- id: SP_IT
+  gl: ["7211"]
+  match: ["1с", "1c", "лиценз", "облачн", "хостинг", "software"]
+  category: S3_C1_GOODS
+  ef_id: SP_IT
+  method: spend
+  reason: IT services and software; spend-based.
+
+- id: SP_TELECOM
+  gl: ["7211"]
+  match: ["связи", "интернет", "байланыс"]
+  category: S3_C1_GOODS
+  ef_id: SP_TELECOM
+  method: spend
+  reason: Telecom services; spend-based.
+
+- id: SP_CLEANING_SECURITY
+  gl: ["7211"]
+  match: ["клининг", "уборк", "охран"]
+  category: S3_C1_GOODS
+  ef_id: SP_CLEANING_SECURITY
+  method: spend
+  reason: Cleaning / security services; spend-based.
+
+- id: SP_CATERING
+  gl: ["7211"]
+  match: ["питание", "столов"]
+  category: S3_C1_GOODS
+  ef_id: SP_CATERING
+  method: spend
+  reason: Staff catering; spend-based.
+
+- id: SP_FINANCIAL
+  gl: ["7214"]
+  match: ["банк", "рко", "страхован"]
+  category: S3_C1_GOODS
+  ef_id: SP_FINANCIAL
+  method: spend
+  reason: Banking / insurance; spend-based.
+
+- id: SP_RENT
+  gl: ["7213"]
+  match: ["аренд"]
+  category: S3_C1_GOODS
+  ef_id: SP_RENT
+  method: spend
+  reason: Rent of premises; spend-based.
+
+- id: SP_OFFICE
+  gl: ["7215"]
+  match: ["канцтовар", "бумаг"]
+  category: S3_C1_GOODS
+  ef_id: SP_OFFICE
+  method: spend
+  reason: Office supplies; spend-based.
+
+- id: SP_MAINTENANCE
+  gl: ["8111"]
+  match: ["ремонт", "техобслуж", "обслуживан"]
+  category: S3_C1_GOODS
+  ef_id: SP_MAINTENANCE
+  method: spend
+  reason: Repair and maintenance services; spend-based.
+
+- id: SP_SPARE_PARTS
+  gl: ["1330"]
+  match: ["запчаст", "подшипник", "ремн", "уплотнен"]
+  category: S3_C1_GOODS
+  ef_id: SP_SPARE_PARTS
+  method: spend
+  reason: Spare parts for machinery; spend-based.
+
+- id: SP_INGREDIENTS
+  gl: ["1312"]
+  match: ["закваск", "культур", "пектин", "стабилизатор"]
+  category: S3_C1_GOODS
+  ef_id: SP_INGREDIENTS_OTHER
+  method: spend
+  reason: Cultures / stabilisers bought in packs; spend-based.

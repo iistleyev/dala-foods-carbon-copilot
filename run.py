@@ -1,0 +1,112 @@
+"""Dala Foods carbon pipeline. One command:  python run.py  -> outputs/
+
+Order per line (first match wins): duplicates -> rules.yaml (GL excludes, GL-routed, refrigerants,
+energy, fuels, raw milk, materials, waste/water, spend keywords) -> ML fallback for spend lines."""
+import sys
+
+import pandas as pd
+
+from src.duplicates import find_duplicates
+from src.fallback import LOW_CONFIDENCE, SpendFallback
+from src.load import ROOT, load_airports, load_factors, load_ledgers
+from src.rules import classify, load_rules, result, spend_result
+from src.score import confusion, score, worst_lines
+
+OUT = ROOT / "outputs"
+AUDIT_COLS = ["line_id", "set", "category", "ef_id", "activity_qty", "activity_unit", "method",
+              "tco2e", "rule_id", "reason", "confidence", "review_flag"]
+
+
+def add_flag(res, flag):
+    res["review_flag"] = "; ".join(x for x in (res["review_flag"], flag) if x)
+
+
+def run_pipeline(df=None):
+    """Classify every train+test line. Returns the audit frame (one row per line)."""
+    df = load_ledgers() if df is None else df
+    rules = load_rules(ROOT / "rules.yaml")
+    factors, airports = load_factors(), load_airports()
+    dups = find_duplicates(df)
+
+    results, pending = {}, []
+    for i, row in df.iterrows():
+        if row["line_id"] in dups:
+            res = result("EXCLUDE", "", 0.0, "", "excluded", 0.0, "DUPLICATE",
+                         "Same doc_no, counterparty, description, quantity and amount as an earlier line.",
+                         flag=f"duplicate of {dups[row['line_id']]}")
+        else:
+            res = classify(row, rules, factors, airports)
+        if res is None:
+            pending.append(i)
+        else:
+            results[i] = res
+
+    if pending:  # ML fallback: spend-based factor predicted from text + GL
+        model = SpendFallback().fit(df[df["set"] == "train"])
+        rows = df.loc[pending]
+        for i, (ef, cat, p) in zip(pending, model.predict(rows)):
+            res = spend_result(df.loc[i], ef, cat, factors, "ML_FALLBACK",
+                               "No rule matched; spend factor predicted from description and GL.",
+                               confidence=round(p, 3), flag="new item")
+            if p < LOW_CONFIDENCE:
+                add_flag(res, "low confidence")
+            results[i] = res
+
+    audit = pd.DataFrame.from_dict(results, orient="index").sort_index()
+    audit.insert(0, "line_id", df["line_id"])
+    audit.insert(1, "set", df["set"])
+    for i in df.index[df["injection"]]:  # planted instructions were stripped, not obeyed
+        audit.at[i, "review_flag"] = "; ".join(
+            x for x in (audit.at[i, "review_flag"], "instruction-like text ignored") if x)
+    audit["tco2e"] = audit["tco2e"].astype(float).round(4)
+    audit["activity_qty"] = audit["activity_qty"].astype(float).round(4)
+    return df, audit[AUDIT_COLS]
+
+
+def summarise(audit):
+    a = audit.copy()
+    a["scope"] = a["category"].str.extract(r"^(S\d)")[0].fillna("EXCLUDE")
+    a["t_activity"] = a["tco2e"].where(a["method"] == "activity", 0.0)
+    a["t_spend"] = a["tco2e"].where(a["method"] == "spend", 0.0)
+    g = a.groupby(["scope", "category"]).agg(lines=("line_id", "size"), tco2e=("tco2e", "sum"),
+                                             tco2e_activity=("t_activity", "sum"),
+                                             tco2e_spend=("t_spend", "sum")).reset_index()
+    total = g["tco2e"].sum()
+    g["share_of_total"] = g["tco2e"] / total
+    g["activity_share"] = (g["tco2e_activity"] / g["tco2e"]).where(g["tco2e"] != 0, 0.0)
+    tot = pd.DataFrame([{"scope": "TOTAL", "category": "ALL", "lines": g["lines"].sum(), "tco2e": total,
+                         "tco2e_activity": g["tco2e_activity"].sum(), "tco2e_spend": g["tco2e_spend"].sum(),
+                         "share_of_total": 1.0, "activity_share": g["tco2e_activity"].sum() / total}])
+    return pd.concat([g, tot], ignore_index=True).round(4)
+
+
+def report_train(df, audit):
+    tr = df[df["set"] == "train"].merge(audit, on=["line_id", "set"])
+    s = score(tr["y_category"], tr["category"], tr["y_tco2e"], tr["tco2e"])
+    print(f"TRAIN  macro-F1 {s['macro_f1']:.4f} | WAPE {s['wape']:.4f} | score {s['score']:.4f}")
+    print(f"       ML-fallback lines: train {(tr['rule_id'] == 'ML_FALLBACK').sum()}, "
+          f"test {((audit['set'] == 'test') & (audit['rule_id'] == 'ML_FALLBACK')).sum()}")
+    with pd.option_context("display.width", 250, "display.max_columns", 30, "display.max_colwidth", 45):
+        print("\n15 worst train lines by absolute tCO2e error:")
+        print(worst_lines(tr).to_string(index=False))
+        print("\nConfusion matrix (rows = true, cols = predicted):")
+        print(confusion(tr).to_string())
+    return s
+
+
+def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    df, audit = run_pipeline()
+    OUT.mkdir(exist_ok=True)
+    test = audit[audit["set"] == "test"]
+    test[["line_id", "category", "tco2e"]].to_csv(OUT / "predictions.csv", index=False, float_format="%.4f")
+    audit.to_csv(OUT / "audit.csv", index=False, encoding="utf-8-sig")
+    summarise(audit).to_csv(OUT / "summary.csv", index=False, encoding="utf-8-sig")
+    report_train(df, audit)
+    print(f"\nWrote outputs/predictions.csv ({len(test)} rows), outputs/audit.csv ({len(audit)} rows), "
+          f"outputs/summary.csv")
+
+
+if __name__ == "__main__":
+    main()
