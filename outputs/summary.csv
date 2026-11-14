@@ -1,13 +1,13 @@
-﻿scope,category,lines,tco2e,tco2e_activity,tco2e_spend,share_of_total,activity_share,basis
-EXCLUDE,EXCLUDE,75,0.0,0.0,0.0,0.0,0.0,
-S1,S1_FUGITIVE,13,1402.2891,1402.2891,0.0,0.007,1.0,refill = leak; GWP-100 from IPCC AR5
-S1,S1_MOBILE,226,4155.4319,4155.4319,0.0,0.0208,1.0,IPCC 2006 Tier 1 default; CO2 only
-S1,S1_STATIONARY,12,8530.3294,8530.3294,0.0,0.0427,1.0,IPCC 2006 Tier 1 default; CO2 only
-S2,S2_ELECTRICITY,24,14495.7464,14495.7464,0.0,0.0726,1.0,location-based (Kazakhstan grid average); market-based not reported
-S2,S2_HEAT,7,1497.0277,1497.0277,0.0,0.0075,1.0,location-based (Almaty district heating factor)
-S3,S3_C1_GOODS,1307,168213.5999,167957.4167,256.1832,0.8426,0.9985,
-S3,S3_C2_CAPITAL,8,776.9,0.0,776.9,0.0039,0.0,
-S3,S3_C4_TRANSPORT,121,173.5884,143.2162,30.3722,0.0009,0.825,"fuel-, distance- and spend-based; see Cat 4 overlap flags in audit.csv"
-S3,S3_C5_WASTE,24,345.0313,345.0313,0.0,0.0017,1.0,
-S3,S3_C6_TRAVEL,135,48.3042,47.5945,0.7097,0.0002,0.9853,
-TOTAL,ALL,1952,199638.2483,198574.0832,1064.1651,1.0,0.9947,
+﻿scope,category,lines,tco2e,tco2e_activity,tco2e_spend,share_of_total,activity_share,tco2e_per_t_product,basis
+EXCLUDE,EXCLUDE,75,0.0,0.0,0.0,0.0,0.0,0.0,
+S1,S1_FUGITIVE,13,1402.2891,1402.2891,0.0,0.007,1.0,0.0134,refill = leak; GWP-100 from IPCC AR5
+S1,S1_MOBILE,226,4155.4319,4155.4319,0.0,0.0208,1.0,0.0396,IPCC 2006 Tier 1 default; CO2 only
+S1,S1_STATIONARY,12,8530.3294,8530.3294,0.0,0.0427,1.0,0.0812,IPCC 2006 Tier 1 default; CO2 only
+S2,S2_ELECTRICITY,24,14495.7464,14495.7464,0.0,0.0726,1.0,0.1381,location-based (Kazakhstan grid average); market-based not reported
+S2,S2_HEAT,7,1497.0277,1497.0277,0.0,0.0075,1.0,0.0143,location-based (Almaty district heating factor)
+S3,S3_C1_GOODS,1307,168213.5999,167957.4167,256.1832,0.8426,0.9985,1.602,
+S3,S3_C2_CAPITAL,8,776.9,0.0,776.9,0.0039,0.0,0.0074,
+S3,S3_C4_TRANSPORT,121,173.5884,143.2162,30.3722,0.0009,0.825,0.0017,"fuel-, distance- and spend-based; see Cat 4 overlap flags in audit.csv"
+S3,S3_C5_WASTE,24,345.0313,345.0313,0.0,0.0017,1.0,0.0033,
+S3,S3_C6_TRAVEL,135,48.3042,47.5945,0.7097,0.0002,0.9853,0.0005,
+TOTAL,ALL,1952,199638.2483,198574.0832,1064.1651,1.0,0.9947,1.9013,

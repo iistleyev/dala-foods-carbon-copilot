@@ -32,11 +32,19 @@ UNIT_MAP = {
     "услуга": "усл", "услуги": "усл", "service": "усл", "services": "усл",
 }
 
-# Sentences that talk to an AI instead of describing a purchase. Ledger text is data, never
-# instructions: we strip these before classifying so they cannot change the output.
+# Text that talks to an AI instead of describing a purchase. Ledger text is data, never
+# instructions: we strip it before classifying so it cannot change the output.
+# Deliberately narrow: plain words like "выбросов" or "emissions" ("Услуги по замеру выбросов
+# котельной") describe purchases. Only address forms and commands count:
 INJECTION_RE = re.compile(
-    r"ignore (all |the )?previous|instruction|assistant|ассистент|\bai\b|\bии\b|note to the model|"
-    r"system note|tco2e|emission|выброс|carbon neutral|установи 0|\bexclude\b",
+    r"\bignore\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\b"          # ignore previous ...
+    r"|\b(?:system|assistant|ai|ии)\s+(?:note|instruction|message|prompt)s?\b"          # SYSTEM NOTE, Assistant instruction
+    r"|(?-i:\bSYSTEM\b)\s*:|\bassistant\s*:"                                           # SYSTEM: / assistant:
+    r"|\bnote\s+to\s+the\s+(?:model|ai|assistant)\b"                                   # Note to the model
+    r"|\bии-ассистент\w*|\bассистенту\b"                                               # ИИ-ассистенту
+    r"|\b(?:output|return|set|classify|установи|поставь|укажи)\b[^.;\n]{0,60}?"         # a command to output
+    r"(?:\bexclude\b|\b0\s*(?:выброс\w*|emissions?|t?co2e)\b|\bzero\b)"                 #   EXCLUDE / zero emissions
+    r"|\b(?:t?co2e|emissions?|выброс\w*)\s*[=:]\s*0\b",                                # tco2e = 0
     re.IGNORECASE,
 )
 
@@ -63,11 +71,19 @@ def strip_injection(raw) -> tuple[str, bool]:
     s = re.sub(r"<!--.*?-->", " ", s, flags=re.DOTALL)
     s = re.sub(r"\[[^\]]*\]", lambda m: " " if INJECTION_RE.search(m.group(0)) else m.group(0), s)
     sentences = re.split(r"(?<=[.!?])\s+", s.strip())
-    kept = [x for x in sentences if not INJECTION_RE.search(x)]
-    if not kept:  # never return an empty description
+    kept, found = [], False
+    for sentence in sentences:
+        m = INJECTION_RE.search(sentence)
+        if m is None:
+            kept.append(sentence)
+            continue
+        found = True
+        if sentence[:m.start()].strip(" ,;:-–—"):  # injection mid-sentence: keep the purchase before it
+            kept.append(sentence[:m.start()].rstrip(" ,;:-–—"))
+    if not kept:  # never return an empty description (it is still flagged)
         kept = sentences[:1]
     s = " ".join(kept).strip()
-    return s, norm_text(s) != norm_text(original)
+    return s, found or norm_text(s) != norm_text(original)
 
 
 def norm_unit(u) -> str:

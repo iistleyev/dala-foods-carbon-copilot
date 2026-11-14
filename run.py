@@ -5,6 +5,7 @@ energy, fuels, raw milk, materials, waste/water, spend keywords) -> ML fallback 
 import sys
 
 import pandas as pd
+import yaml
 
 from src.duplicates import (FREIGHT_OVERLAP_FLAG, FUEL_OVERLAP_FLAG, find_carrier_overlap,
                             find_duplicates)
@@ -99,9 +100,17 @@ def summarise(audit):
     tot = pd.DataFrame([{"scope": "TOTAL", "category": "ALL", "lines": g["lines"].sum(), "tco2e": total,
                          "tco2e_activity": g["tco2e_activity"].sum(), "tco2e_spend": g["tco2e_spend"].sum(),
                          "share_of_total": 1.0, "activity_share": g["tco2e_activity"].sum() / total}])
-    out = pd.concat([g, tot], ignore_index=True).round(4)
+    out = pd.concat([g, tot], ignore_index=True)
+    # The brief asks for tCO2e per tonne of product (105,000 t, set in scenarios.yaml).
+    out["tco2e_per_t_product"] = out["tco2e"] / product_tonnes()
+    out = out.round(4)
     out["basis"] = out["category"].map(BASIS).fillna("")
     return out
+
+
+def product_tonnes():
+    with open(ROOT / "scenarios.yaml", encoding="utf-8") as f:
+        return yaml.safe_load(f)["product"]["finished_product_t"]
 
 
 def report_train(df, audit):

@@ -1,0 +1,9 @@
+﻿item,days,day_rate_kzt,kzt_per_year
+Annual run and review of flagged lines (accountant),10.0,45000.0,450000.0
+Rule and factor-library update (analyst / developer),15.0,60000.0,900000.0
+Internal second check before external assurance,5.0,60000.0,300000.0
+Training and handover when staff change,5.0,60000.0,300000.0
+"Hardware, cloud and licences (runs on an existing laptop, open-source Python)",0.0,0.0,0.0
+Contingency 20%,,,390000.0
+TOTAL per year,,,2340000.0
+CFO budget,,,15000000.0

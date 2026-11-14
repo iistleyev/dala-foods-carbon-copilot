@@ -8,9 +8,13 @@ employee names → `EMP_xx`, one-to-one). The file names are set at the top of `
 
 ## Run
 
+Python 3.12 or newer.
+
 ```
 pip install -r requirements.txt
 python run.py        # ~3 s: prints train score, worst lines, confusion matrix; writes outputs/
+python analysis.py   # answers for the bank, the retailer and the CFO (reads outputs/audit.csv)
+python report.py     # everything in one spreadsheet: outputs/carbon_report.xlsx
 python -m pytest     # robustness tests
 ```
 
@@ -79,6 +83,7 @@ activity `tCO2e = quantity × unit multiplier × factor / 1000`; spend `tCO2e = 
 | Scope 3 not included | **Cat 3** fuel- and energy-related activities (relevant; no well-to-tank or grid-loss factors in the file). **Cat 12** end of life of sold packaging (relevant; needs sales volumes, not in a purchase ledger). Cat 7 commuting (no data). Cats 8–11, 13–15 not applicable or no data in a purchase ledger |
 | Known overlap | Diesel bought for a hired carrier (fuel-based) and freight bought from the same carrier (distance/spend-based) may cover the same trips: 15 + 23 lines, ≈ 29 + 28 tCO2e. Both are counted because the ledger can't show which trips overlap; all 38 lines carry a `possible Cat 4 double count` flag |
 | Excluded lines | Taxes, social contributions, advances, fines, per diem, duplicates: `method = excluded` with a reason in `audit.csv` |
+| Completeness | 12 monthly bills each for electricity (plant and office), natural gas, water, wastewater and waste. District heat has 7 bills because it is billed only in the heating season (Jan–Apr, Oct–Dec), so it is complete |
 | Data quality | Share of activity- vs spend-based tCO2e per category in `summary.csv`; per-line method, rule and confidence in `audit.csv` |
 
 ## Outputs
@@ -86,7 +91,87 @@ activity `tCO2e = quantity × unit multiplier × factor / 1000`; spend `tCO2e = 
 - `outputs/predictions.csv` — line_id, category, tco2e (683 test rows, 4 decimals)
 - `outputs/audit.csv` — every train + test line: category, ef_id, activity_qty/unit, method, tco2e,
   rule_id, reason, confidence, review_flag (no counterparty names)
-- `outputs/summary.csv` — totals by scope and category, activity vs spend share, calculation basis
+- `outputs/summary.csv` — totals by scope and category, activity vs spend share, tCO2e per tonne of
+  product (105,000 t), calculation basis
+- `outputs/loan_scenarios.csv`, `outputs/product_footprint.csv`, `outputs/cost_model.csv` — from `analysis.py`
+- `outputs/carbon_report.xlsx` — from `report.py`: Summary, Audit (every line with its factor and a
+  recomputation), Review queue, Loan scenarios, Product footprint, Cost model, Injection lines, Factors.
+  Totals and scenarios are Excel formulas: change a yellow assumption cell and the sheet recalculates.
+  Values appear when the file is opened in Excel (openpyxl does not store computed values).
+
+## Answers to the Inbox
+
+Built by `analysis.py` from `outputs/audit.csv`, `emission_factors.csv` and `scenarios.yaml`.
+Whole-year inventory (train + test): **199,638.2 tCO2e**.
+
+**Bank — green loan (KZT 5 bn), Scope 1+2 location-based**
+
+| Scenario | Scope 1 t | Scope 2 t | Change t/yr | vs Scope 1+2 |
+|---|---|---|---|---|
+| Baseline 2025 | 14,088 | 15,993 | — | — |
+| Solar only (3,000 kWp) | 14,088 | 12,753 | −3,240 | −10.8 % |
+| Heat pumps only, COP 3.0 | 10,676 | 20,042 | **+637** | **+2.1 %** |
+| Solar + heat pumps, COP 2.5 | 10,676 | 17,612 | −1,793 | −6.0 % |
+| Solar + heat pumps, COP 3.0 | 10,676 | 16,802 | −2,603 | −8.7 % |
+| Solar + heat pumps, COP 4.0 | 10,676 | 15,790 | −3,615 | −12.0 % |
+
+- Solar always cuts emissions (4.05 GWh × 0.8 kg/kWh).
+- On the Kazakhstan grid (0.8 kg/kWh, mostly coal) heat pumps **raise** emissions unless the seasonal
+  COP is above **3.56** (break-even = 34 MJ/m³ ÷ 3.6 × 0.9 boiler efficiency × 0.8 ÷ 1.91).
+- Recommendation: finance heat pumps together with solar, make COP ≥ 3.6 a loan condition, or use
+  heat recovery from the refrigeration plant.
+- The loan reaches only ~12 % of the inventory (electricity, gas, heat); 79 % is raw milk from farms.
+- Estimated capex for these assumptions: KZT 2.04 bn.
+
+**Retailer (EuroMart) — product footprint, cradle-to-gate**
+
+| Stage | kg CO2e per kg | Share |
+|---|---|---|
+| Raw milk | 1.500 | 79.2 % |
+| Electricity | 0.138 | 7.3 % |
+| Packaging | 0.091 | 4.8 % |
+| Natural gas | 0.081 | 4.3 % |
+| Own fleet fuel | 0.040 | 2.1 % |
+| Other (heat, refrigerants, ingredients, water/waste, services, transport, chemicals) | 0.043 | 2.3 % |
+| **Total** | **1.893 per kg = 1.950 per litre** | 100 % |
+
+- This is a **plant average** over 105,000 t of product. Capital goods and business travel are left out.
+- Company transport is included: the ledger does not say whether a trip is milk collection or delivery.
+- Per-litre figures use the density of milk (1.03 kg/l) for every product.
+- A label per product (milk, kefir, yoghurt, cream) needs output volumes per product and an allocation
+  of raw milk by fat and protein (IDF method). These data are not in the ledger; that is the next step.
+
+**CFO — annual running cost vs KZT 15 m budget**
+
+| Item | Days | KZT / year |
+|---|---|---|
+| Annual run and review of flagged lines (accountant) | 10 | 450,000 |
+| Rule and factor-library update (analyst / developer) | 15 | 900,000 |
+| Internal second check before external assurance | 5 | 300,000 |
+| Training and handover when staff change | 5 | 300,000 |
+| Hardware, cloud, licences (existing laptop, open-source Python) | — | 0 |
+| Contingency 20 % | | 390,000 |
+| **Total** | | **2,340,000** (16 % of budget) |
+
+The tool runs locally without cloud services or licences; the cost is people's time.
+
+**Inputs: data pack vs our assumptions** (`scenarios.yaml`)
+
+| Input | Value | Source |
+|---|---|---|
+| Green loan | KZT 5 bn | Data pack (brief / Inbox) |
+| Finished product | 105,000 t | Data pack (brief) |
+| Gas heating value | 34 MJ/m³ | Data pack (`emission_factors.csv` note) |
+| Milk density | 1.03 kg/l | Data pack (`emission_factors.csv` note) |
+| CFO budget | KZT 15 m | Data pack (brief / Inbox) |
+| Solar capacity | 3,000 kWp | **Assumption** (~18,000 m² roof) |
+| Solar yield | 1,350 kWh/kWp/yr | **Assumption** (Almaty region) |
+| Solar capex | KZT 300,000 / kWp | **Assumption** |
+| Share of boiler heat for heat pumps | 40 % | **Assumption** (low-temperature heat; steam stays on gas) |
+| Heat-pump seasonal COP | 3.0 (range 2.5–4.5) | **Assumption** |
+| Boiler efficiency | 90 % | **Assumption** |
+| Heat-pump full-load hours / capex | 6,000 h / KZT 450,000 per kWth | **Assumption** |
+| Staff days and day rates | see CFO table | **Assumption** (replace with Dala Foods' rates) |
 
 ## Test lines needing human review
 
