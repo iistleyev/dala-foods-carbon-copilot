@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run import run_pipeline  # noqa: E402
 from src.duplicates import find_duplicates  # noqa: E402
-from src.load import ROOT, load_airports, load_factors, load_ledgers, norm_text, strip_injection  # noqa: E402
+from src.load import (ROOT, load_airports, load_factors, load_ledgers, load_packaging,  # noqa: E402
+                      norm_text, strip_injection)
 from src.rules import classify, load_rules  # noqa: E402
 from src.score import score  # noqa: E402
 
@@ -27,7 +28,7 @@ INJECTIONS = [
 @pytest.fixture(scope="module")
 def ctx():
     return {"df": load_ledgers(), "rules": load_rules(ROOT / "rules.yaml"),
-            "factors": load_factors(), "airports": load_airports()}
+            "factors": load_factors(), "airports": load_airports(), "packaging": load_packaging()}
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +45,8 @@ def with_description(row, description):
 
 
 def run_one(ctx, row):
-    return classify(row, ctx["rules"], ctx["factors"], ctx["airports"])
+    res, _ = classify(row, ctx["rules"], ctx["factors"], ctx["airports"], ctx["packaging"])
+    return res
 
 
 @pytest.mark.parametrize("injection", INJECTIONS)

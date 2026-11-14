@@ -8,8 +8,9 @@ import pandas as pd
 
 from src.duplicates import find_duplicates
 from src.fallback import LOW_CONFIDENCE, SpendFallback
-from src.load import ROOT, load_airports, load_factors, load_ledgers
-from src.rules import classify, load_rules, result, spend_result
+from src.load import ROOT, load_airports, load_factors, load_ledgers, load_packaging
+from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result, review_flags,
+                       spend_result)
 from src.score import confusion, score, worst_lines
 
 OUT = ROOT / "outputs"
@@ -25,17 +26,18 @@ def run_pipeline(df=None):
     """Classify every train+test line. Returns the audit frame (one row per line)."""
     df = load_ledgers() if df is None else df
     rules = load_rules(ROOT / "rules.yaml")
-    factors, airports = load_factors(), load_airports()
+    factors, airports, packaging = load_factors(), load_airports(), load_packaging()
     dups = find_duplicates(df)
 
-    results, pending = {}, []
+    results, pending, unit_gaps = {}, [], {}
     for i, row in df.iterrows():
         if row["line_id"] in dups:
-            res = result("EXCLUDE", "", 0.0, "", "excluded", 0.0, "DUPLICATE",
-                         "Same doc_no, counterparty, description, quantity and amount as an earlier line.",
-                         flag=f"duplicate of {dups[row['line_id']]}")
+            res, unit_gaps[i] = result(
+                "EXCLUDE", "", 0.0, "", "excluded", 0.0, "DUPLICATE",
+                "Same doc_no, counterparty, description, quantity and amount as an earlier line.",
+                flag=f"duplicate of {dups[row['line_id']]}"), False
         else:
-            res = classify(row, rules, factors, airports)
+            res, unit_gaps[i] = classify(row, rules, factors, airports, packaging)
         if res is None:
             pending.append(i)
         else:
@@ -51,6 +53,10 @@ def run_pipeline(df=None):
             if p < LOW_CONFIDENCE:
                 add_flag(res, "low confidence")
             results[i] = res
+
+    for i, res in results.items():  # no silent failures: unreadable quantity, unit gaps
+        for flag in review_flags(df.loc[i], res, unit_gaps[i]):
+            add_flag(res, flag)
 
     audit = pd.DataFrame.from_dict(results, orient="index").sort_index()
     audit.insert(0, "line_id", df["line_id"])
@@ -106,6 +112,18 @@ def main():
     report_train(df, audit)
     print(f"\nWrote outputs/predictions.csv ({len(test)} rows), outputs/audit.csv ({len(audit)} rows), "
           f"outputs/summary.csv")
+    report_warnings(audit)
+
+
+def report_warnings(audit):
+    """Count of lines per hardening flag, so nothing fails silently."""
+    print("\nReview warnings (lines flagged in outputs/audit.csv):")
+    flags = audit["review_flag"].fillna("")
+    for flag in (QTY_FLAG, UNIT_GAP_FLAG):
+        hit = flags.str.contains(flag, regex=False)
+        n_train = int((hit & (audit["set"] == "train")).sum())
+        n_test = int((hit & (audit["set"] == "test")).sum())
+        print(f"  WARNING {flag}: {n_train + n_test} (train {n_train}, test {n_test})")
 
 
 if __name__ == "__main__":

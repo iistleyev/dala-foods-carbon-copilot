@@ -48,6 +48,18 @@ activity `tCO2e = quantity × unit multiplier × factor / 1000`; spend `tCO2e = 
 | Credit notes | negative quantity kept → negative tCO2e (never `abs()`) |
 | PET preforms in шт | pieces × grams in the item name / 1000 |
 
+## Safeguards for unseen data
+
+- **No silent failures.** An unreadable or missing quantity stays empty (never 0) and gets
+  `review_flag = quantity unreadable`. If a milk/fuel/energy/packaging/chemicals/waste rule matches but
+  can't convert the line's unit, the line falls through as before and, if it ends up spend-based, gets
+  `activity item computed by spend: unit not covered`. `run.py` prints a count for both flags.
+- **Number parsing** accepts thousand separators ("1 500 кг", including no-break spaces) and Latin units (kg, km, g).
+- **Piece weights** (unit шт): `packaging_specs.csv` by item name → grams written in the name → the
+  rules.yaml default. The audit reason says which source was used.
+- **Mixed flights**: if legs use different factors (e.g. NQZ-ALA domestic + ALA-FRA long-haul), ef_id is
+  `EF_FLIGHT_DOM_PKM+EF_FLIGHT_LONG_PKM` and the reason lists km per leg.
+
 ## Outputs
 
 - `outputs/predictions.csv` — line_id, category, tco2e (683 test rows, 4 decimals)

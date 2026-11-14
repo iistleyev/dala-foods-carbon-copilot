@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .convert import parse_number
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # Pipeline inputs: masked ledgers (counterparties -> VENDOR_xxx, employee names -> EMP_xx).
@@ -72,22 +74,49 @@ def norm_unit(u) -> str:
     return UNIT_MAP.get(key, str(u).strip())
 
 
-def load_ledgers() -> pd.DataFrame:
-    """Train + test in one frame with normalised helper columns."""
-    train = read_csv(TRAIN_FILE)
-    test = read_csv(TEST_FILE)
-    train["set"], test["set"] = "train", "test"
-    df = pd.concat([train, test], ignore_index=True)
-    df["gl"] = df["gl_account"].fillna("").str.strip()
+def parse_quantity(values: pd.Series) -> tuple[pd.Series, pd.Series]:
+    """Ledger quantity -> (float values, unreadable mask).
+
+    Numbers pandas already parsed are kept as they are. Text like '1 500' or '2,5' is parsed with
+    the same rules as numbers in descriptions. Missing or non-numeric stays NaN (never 0) and is
+    marked unreadable, so the line gets review_flag 'quantity unreadable'."""
+    num = pd.to_numeric(values, errors="coerce")
+    retry = num.isna() & values.notna()
+    if retry.any():
+        num = num.astype(float)
+        num[retry] = values[retry].map(parse_number).astype(float)
+    num = num.astype(float)
+    return num, num.isna()
+
+
+def normalise(df: pd.DataFrame) -> pd.DataFrame:
+    """Add the helper columns the rules use (works on any ledger-shaped frame)."""
+    df = df.copy()
+    df["gl"] = df["gl_account"].fillna("").astype(str).str.strip()
     clean = df["description"].map(strip_injection)
     df["text"] = clean.map(lambda x: norm_text(x[0]))
     df["injection"] = clean.map(lambda x: x[1])
     df["raw_text"] = df["description"].map(norm_text)  # used only for duplicate matching
     df["unit_code"] = df["unit"].map(norm_unit)
-    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0.0)
+    df["quantity"], df["quantity_unreadable"] = parse_quantity(df["quantity"])
     df["vat_kzt"] = pd.to_numeric(df["vat_kzt"], errors="coerce").fillna(0.0)
     df["net_kzt"] = df["amount_kzt_gross"] - df["vat_kzt"]
+    return df
+
+
+def load_ledgers() -> pd.DataFrame:
+    """Train + test in one frame with normalised helper columns."""
+    train = read_csv(TRAIN_FILE)
+    test = read_csv(TEST_FILE)
+    train["set"], test["set"] = "train", "test"
+    df = normalise(pd.concat([train, test], ignore_index=True))
     return df.sort_values("line_id").reset_index(drop=True)
+
+
+def load_packaging() -> dict:
+    """packaging_specs.csv -> {normalised item name: kg per piece}."""
+    spec = read_csv("packaging_specs.csv")
+    return {norm_text(r.item): float(r.unit_weight_g) / 1000 for r in spec.itertuples()}
 
 
 def load_factors() -> dict:

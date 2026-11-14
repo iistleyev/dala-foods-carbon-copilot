@@ -2,31 +2,60 @@
 import math
 import re
 
-NUM = r"(-?\d+(?:[.,]\d+)?)"
+# Thousand separators: plain space, no-break space (U+00A0), narrow no-break space (U+202F).
+THOUSANDS = "[   ]"
+# A number: either grouped in thousands ("1 500", "12 500,5") or plain ("1500", "11.1", "1,5").
+NUM = r"(-?\d{1,3}(?:" + THOUSANDS + r"\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?)"
 EARTH_RADIUS_KM = 6371.0
 LONG_HAUL_KM = 3700.0
 
 
 def _num(s: str) -> float:
-    return float(s.replace(",", "."))
+    return float(re.sub(THOUSANDS, "", s).replace(",", "."))
+
+
+def parse_number(s):
+    """'1 500' / '1 500,5' / '12' -> float; anything unreadable -> None."""
+    if s is None:
+        return None
+    s = str(s).strip()
+    if not re.fullmatch(NUM, s):
+        return None
+    return _num(s)
 
 
 def parse_kg(text: str):
-    """'дозаправка r404a 11.1 кг' -> 11.1"""
-    m = re.search(NUM + r"\s*кг", text)
+    """'дозаправка r404a 11.1 кг' -> 11.1 ; '1 500 кг' -> 1500 ; '11.1 kg' -> 11.1"""
+    m = re.search(NUM + r"\s*(?:кг|kg)", text)
     return _num(m.group(1)) if m else None
 
 
 def parse_km(text: str):
-    """'алматы-ташкент, 41.1 т, 3100 км' -> 3100"""
-    m = re.search(NUM + r"\s*км\b", text)
+    """'алматы-ташкент, 41.1 т, 3100 км' -> 3100 ; '3 100 km' -> 3100"""
+    m = re.search(NUM + r"\s*(?:км|km)\b", text)
     return _num(m.group(1)) if m else None
 
 
 def parse_grams(text: str):
-    """'преформа пэт 28 г, 1,5 л' -> 28 ; 'преформа pet 22г 0,9л' -> 22"""
-    m = re.search(NUM + r"\s*г(?![а-яa-z])", text)
+    """'преформа пэт 28 г, 1,5 л' -> 28 ; 'преформа pet 22г 0,9л' -> 22 ; '28 g' -> 28"""
+    m = re.search(NUM + r"\s*(?:г|g)(?![а-яa-z])", text)
     return _num(m.group(1)) if m else None
+
+
+def piece_weight_kg(text: str, rule_spec, packaging: dict):
+    """kg per piece for a line counted in шт. Sources, in order:
+    1. packaging_specs.csv, matched on the normalised item name;
+    2. grams written in the item name ('преформа пэт 28 г');
+    3. the rule's default in rules.yaml (last resort).
+    Returns (kg_per_piece, source_sentence) or (None, None)."""
+    if text in packaging:
+        return packaging[text], "Piece weight from packaging_specs.csv."
+    g = parse_grams(text)
+    if g is not None:
+        return g / 1000, "Piece weight from grams in the item name."
+    if isinstance(rule_spec, (int, float)):
+        return float(rule_spec), "Piece weight from the rules.yaml default."
+    return None, None
 
 
 def unit_multiplier(spec, text: str):

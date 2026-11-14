@@ -13,6 +13,11 @@
 #             factor's unit. Values: a number, a fraction like "1/4.1868", kg_in_text, grams_in_text.
 #             A line whose unit is not listed does not match the rule.
 #   reason    one short sentence for the audit file
+#   review_if_unit_missing
+#             true for activity items (milk, fuel, energy, packaging, chemicals, waste...). If such a
+#             rule matches on GL/keywords but cannot convert the line (unit not listed, no weight in
+#             the text) and the line ends up spend-based, the audit gets review_flag
+#             "activity item computed by spend: unit not covered".
 #
 # Spend method: activity = (gross - VAT) / 1000 thousand KZT; tCO2e = activity * factor / 1000.
 
@@ -106,6 +111,7 @@
 # A refill replaces gas that leaked, so refilled kg = released kg. Service lines (unit усл)
 # carry the kg in the text, e.g. "дозаправка R404A 11.1 кг".
 - id: REFRIGERANT
+  review_if_unit_missing: true
   gl: ["1330", "8111"]
   match: ["r404", "r-404", "r134", "r-134", "r410", "r-410", "r744", "r-744", "фреон", "хладагент", "дозаправк"]
   category: S1_FUGITIVE
@@ -115,6 +121,7 @@
 
 # ---------------------------------------------------------------- 6. Energy
 - id: ELECTRICITY
+  review_if_unit_missing: true
   gl: ["8110", "7210"]
   match: ["электроэнерг", "электр энерг", "электр қуат", "electricity"]
   category: S2_ELECTRICITY
@@ -123,6 +130,7 @@
   reason: Purchased grid electricity converted to kWh.
 
 - id: DISTRICT_HEAT
+  review_if_unit_missing: true
   gl: ["7210", "8110"]
   match: ["тепловая энерг", "теплоэнерг", "жылу", "heat"]
   category: S2_HEAT
@@ -133,6 +141,7 @@
 # ---------------------------------------------------------------- 7. Fuels
 # Diesel bought for a hired carrier is burned in someone else's truck -> Scope 3 transport.
 - id: FUEL_DIESEL_HIRED
+  review_if_unit_missing: true
   gl: ["1320"]
   match: ["наемн", "перевозчик"]
   category: S3_C4_TRANSPORT
@@ -141,6 +150,7 @@
   reason: Diesel for a hired third-party carrier - Scope 3 upstream transport.
 
 - id: FUEL_DIESEL_T
+  review_if_unit_missing: true
   gl: ["1320"]
   match: ["дизел", "дт", "diesel"]
   unit: ["т"]
@@ -150,6 +160,7 @@
   reason: Diesel for own fleet, in tonnes.
 
 - id: FUEL_DIESEL_L
+  review_if_unit_missing: true
   gl: ["1320"]
   match: ["дизел", "дт", "diesel"]
   category: S1_MOBILE
@@ -158,6 +169,7 @@
   reason: Diesel for own fleet, in litres.
 
 - id: FUEL_PETROL
+  review_if_unit_missing: true
   gl: ["1320"]
   match: ["бензин", "жанармай", "аи-92", "аи-95", "аи 92", "аи 95", "petrol", "gasoline"]
   category: S1_MOBILE
@@ -166,6 +178,7 @@
   reason: Petrol for own vehicles, in litres.
 
 - id: FUEL_LPG
+  review_if_unit_missing: true
   gl: ["1320"]
   match: ["суг", "сжиженн", "пропан", "lpg"]
   category: S1_MOBILE
@@ -174,6 +187,7 @@
   reason: LPG for own forklifts converted to kg (0.54 kg/l).
 
 - id: FUEL_NATURAL_GAS
+  review_if_unit_missing: true
   gl: ["8110", "7210"]
   match: ["природный газ", "табиғи газ", "natural gas"]
   category: S1_STATIONARY
@@ -184,6 +198,7 @@
 # ---------------------------------------------------------------- 8. Raw milk
 # GL 1310 is raw materials = raw milk only; descriptions have many typos, so the GL decides.
 - id: RAW_MILK
+  review_if_unit_missing: true
   gl: ["1310"]
   category: S3_C1_GOODS
   ef_id: EF_MILK_KG
@@ -192,38 +207,43 @@
 
 # ---------------------------------------------------------------- 9. Materials
 - id: PACK_PET
+  review_if_unit_missing: true
   gl: ["1311"]
   match: ["пэт", "pet", "преформ"]
   category: S3_C1_GOODS
   ef_id: EF_PET_KG
   units: {кг: 1, т: 1000, шт: grams_in_text}
-  reason: PET preforms in kg; pieces x grams in the item name.
+  reason: PET preforms converted to kg.
 
 - id: PACK_HDPE
+  review_if_unit_missing: true
   gl: ["1311"]
   match: ["крышк", "қақпақ", "пленк", "стрейч", "hdpe", "ldpe"]
   category: S3_C1_GOODS
   ef_id: EF_HDPE_KG
   units: {кг: 1, т: 1000, шт: 0.0025}
-  reason: HDPE caps / stretch film in kg; caps 2.5 g each.
+  reason: HDPE caps / stretch film converted to kg.
 
 - id: PACK_CARTON
+  review_if_unit_missing: true
   gl: ["1311"]
   match: ["асептич"]
   category: S3_C1_GOODS
   ef_id: EF_CARTON_KG
   units: {кг: 1, т: 1000, шт: 0.028}
-  reason: Aseptic carton in kg; 28 g per pack.
+  reason: Aseptic carton converted to kg.
 
 - id: PACK_CORRUGATED
+  review_if_unit_missing: true
   gl: ["1311"]
   match: ["гофро", "картонн"]
   category: S3_C1_GOODS
   ef_id: EF_PAPERBOARD_KG
   units: {кг: 1, т: 1000, шт: 0.35}
-  reason: Corrugated boxes in kg; 350 g per box.
+  reason: Corrugated boxes converted to kg.
 
 - id: PACK_FOIL
+  review_if_unit_missing: true
   gl: ["1311"]
   match: ["фольг", "foil"]
   category: S3_C1_GOODS
@@ -232,6 +252,7 @@
   reason: Aluminium foil lids in kg.
 
 - id: ING_SUGAR
+  review_if_unit_missing: true
   gl: ["1312"]
   match: ["сахар", "қант", "sugar"]
   category: S3_C1_GOODS
@@ -240,6 +261,7 @@
   reason: Sugar in kg.
 
 - id: ING_FRUIT
+  review_if_unit_missing: true
   gl: ["1312"]
   match: ["фрукт", "пюре", "ягод", "fruit"]
   category: S3_C1_GOODS
@@ -248,6 +270,7 @@
   reason: Fruit filling / puree in kg.
 
 - id: CHEM_CAUSTIC
+  review_if_unit_missing: true
   gl: ["1313"]
   match: ["каустик", "каустич", "натр едкий", "едкий натр", "naoh"]
   category: S3_C1_GOODS
@@ -256,6 +279,7 @@
   reason: Caustic soda (CIP cleaning) in kg.
 
 - id: CHEM_ACID
+  review_if_unit_missing: true
   gl: ["1313"]
   match: ["кислотн", "азотн", "acid"]
   category: S3_C1_GOODS
@@ -265,6 +289,7 @@
 
 # ---------------------------------------------------------------- 10. Water and waste
 - id: WATER_SUPPLY
+  review_if_unit_missing: true
   gl: ["8110", "7210"]
   match: ["водоснабжен", "сумен жабдықта"]
   category: S3_C1_GOODS
@@ -273,6 +298,7 @@
   reason: Mains water supply in m3.
 
 - id: WASTEWATER
+  review_if_unit_missing: true
   gl: ["8110", "7210"]
   match: ["водоотведен", "промсток", "канализац"]
   category: S3_C5_WASTE
@@ -281,6 +307,7 @@
   reason: Industrial wastewater treated by the utility, in m3.
 
 - id: WASTE_LANDFILL
+  review_if_unit_missing: true
   gl: ["7210", "8110"]
   match: ["тбо", "полигон", "мусор", "отход"]
   category: S3_C5_WASTE
