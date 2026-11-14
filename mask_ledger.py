@@ -15,27 +15,45 @@ TITLE = rf"(?:[{UPPER}][{LOWER}]+|[{UPPER}]['’][{UPPER}][{LOWER}]+)(?:[-'’][
 CAPS = rf"[{UPPER}]{{2,}}(?:[-'’][{UPPER}]+)*"
 WORD = rf"(?:{TITLE}|{CAPS})"
 INITIAL = rf"[{UPPER}]\."
+# A run of all-caps words ("SYSTEM NOTE FOR AI", "ДТ-З", "HDPE") is an abbreviation or shouting,
+# not a person: all-caps words count as a name only next to initials ("SMITH A.") or after a
+# name field such as "employee:" (PERSON_FIELD).
 PERSON = re.compile(
     rf"(?<![\w-])(?:{TITLE}\s+(?:[{UPPER}]\.?\s+){{1,2}}{TITLE}|"
     rf"{WORD}\s+(?:{INITIAL}\s*){{1,3}}|(?:{INITIAL}\s*){{1,3}}{WORD}|(?:{INITIAL}\s*){{2,3}}|"
-    rf"{TITLE}(?:\s+(?:(?:de|van|von|bin)\s+)?{TITLE}){{1,3}}|{CAPS}(?:\s+{CAPS}){{1,3}})"
+    rf"{TITLE}(?:\s+(?:(?:de|van|von|bin)\s+)?{TITLE}){{1,3}})"
     rf"(?![\w-])"
 )
+# After a name field every following word is the name, in any case, including a single word.
 PERSON_FIELD = re.compile(
     rf"(?i:\b(?:employee|passenger|travell?er|сотрудник|пассажир|қызметкер))\s*[:=]\s*"
-    rf"([{LETTERS}][-'{LETTERS}’.]*(?:\s+[{LETTERS}][-'{LETTERS}’.]*){{1,3}})"
+    rf"([{LETTERS}][-'{LETTERS}’.]*(?:\s+[{LETTERS}][-'{LETTERS}’.]*){{0,3}})"
 )
 LEGAL = r"(?i:ТОО|TOO|ИП|АО|AO|LLP|LLC)"
 MARKER = re.compile(rf"\b{LEGAL}\b")
+# "ИП" (sole proprietor) always comes before the owner's name. Keep the designator and replace only
+# the name: "перевозчик ИП Фамилия" -> "перевозчик ИП VENDOR_xxx", surrounding words untouched.
+# Name = surname (any case), up to two more title-case words (first name, patronymic), initials.
+SOLE_PROPRIETOR = re.compile(
+    rf"(?<![\w-])((?i:ИП))\s+((?:{TITLE}|{CAPS}|[{LOWER}]+)(?:\s+{TITLE}){{0,2}}"
+    rf"(?:\s+{INITIAL}(?:\s*{INITIAL}){{0,2}})?)(?![\w-])"
+)
 QUOTED = r"""(?:«[^»\n]+»|“[^”\n]+”|"[^"\n]+"|'[^'\n]+')"""
 QUOTED_COMPANY = re.compile(rf"(?:\b{LEGAL}\s*{QUOTED}|{QUOTED}\s*{LEGAL}\b)")
 ORG_WORD = rf"[{LETTERS}0-9][\w&’'-]*"
 # A legal suffix ends an entity. For unfamiliar unquoted lowercase names the
 # field delimiter is the safe boundary; preserve common surrounding invoice terms.
 ORG_PART = rf"(?!(?i:from|for|via|by|at|and|от|для|через|и)\b){ORG_WORD}"
-SUFFIX_COMPANY = re.compile(rf"(?<!\w){ORG_PART}(?:\s+(?:&\s+)?{ORG_PART})*\s+{LEGAL}\b")
+# ИП is never a suffix (it introduces a name, see SOLE_PROPRIETOR); treating it as one swallowed
+# the word before it ("перевозчик") and left the surname after it unmasked.
+SUFFIX_LEGAL = r"(?i:ТОО|TOO|АО|AO|LLP|LLC)"
+SUFFIX_COMPANY = re.compile(rf"(?<!\w){ORG_PART}(?:\s+(?:&\s+)?{ORG_PART})*\s+{SUFFIX_LEGAL}\b")
 PREFIX_COMPANY = re.compile(rf"\b{LEGAL}\s+{ORG_PART}(?:\s+(?:&\s+)?{ORG_PART})*")
 TOKEN = re.compile(r"\b(?:VENDOR|EMP)_\d+\b")
+# A designator followed by a code ("ИП VENDOR_068") is fully masked.
+RESOLVED_DESIGNATOR = re.compile(rf"(?<![\w-]){LEGAL}\s+(?:VENDOR|EMP)_\d+\b")
+# Already-masked spans are parked behind private-use placeholders so later patterns can't re-mask them.
+PARKED = re.compile("\ue000(.)\ue001")
 
 
 def _known_names(names):
@@ -65,7 +83,23 @@ class LedgerMasker:
             mapping[original] = f"{prefix}_{len(mapping) + 1:0{width}d}"
         return mapping[original]
 
+    def _sole_proprietor_code(self, name):
+        """One code per proprietor: reuse the counterparty's code if they are one."""
+        key = f"ИП {name}"
+        code = self.aliases.get(key.casefold()) or self.aliases.get(name.casefold())
+        if code is None:
+            code = self._code(key, self.vendors, "VENDOR", 3)
+            # Register both spellings so validate() also catches the bare surname anywhere else.
+            self.aliases[key.casefold()] = self.aliases[name.casefold()] = code
+        return code
+
     def mask_desc(self, text):
+        parked = []
+
+        def park(masked):
+            parked.append(masked)
+            return f"{chr(0xE100 + len(parked) - 1)}"
+
         def company(match):
             original = match[0].strip()
             alias = original.casefold()
@@ -76,6 +110,11 @@ class LedgerMasker:
         def employee(name):
             return self._code(name.strip(), self.employees, "EMP", 2)
 
+        # Codes from an earlier pass are already masked: park them so masking is idempotent.
+        text = RESOLVED_DESIGNATOR.sub(lambda m: park(m[0]), text)
+        text = TOKEN.sub(lambda m: park(m[0]), text)
+        # Sole proprietors first, so "ИП" stays and the company patterns never see it.
+        text = SOLE_PROPRIETOR.sub(lambda m: park(f"{m[1]} {self._sole_proprietor_code(m[2])}"), text)
         # Match known full counterparty names first, even when case or quoted
         # spelling differs. Leave bare aliases until after legal designators.
         if self.full_names:
@@ -86,7 +125,8 @@ class LedgerMasker:
         if self.known:
             text = self.known.sub(lambda m: self.aliases[m[0].casefold()], text)
         text = PERSON_FIELD.sub(lambda m: m[0][:m.start(1)-m.start()] + employee(m[1]), text)
-        return PERSON.sub(lambda m: employee(m[0]) + (" " if m[0][-1].isspace() else ""), text)
+        text = PERSON.sub(lambda m: employee(m[0]) + (" " if m[0][-1].isspace() else ""), text)
+        return PARKED.sub(lambda m: parked[ord(m[1]) - 0xE100], text)
 
     def validate(self, ledgers):
         known = _known_names([*self.aliases, *self.vendors, *self.employees])
@@ -94,14 +134,17 @@ class LedgerMasker:
             for row in df.itertuples():
                 if row.counterparty and not re.fullmatch(r"VENDOR_\d+", row.counterparty):
                     raise ValueError(f"Unmasked counterparty at {row.line_id}")
-                rest = TOKEN.sub("|", row.description)
+                rest = TOKEN.sub("|", RESOLVED_DESIGNATOR.sub("|", row.description))
                 if (MARKER.search(rest) or PERSON.search(rest) or PERSON_FIELD.search(rest)
                         or (known and known.search(rest))):
                     raise ValueError(f"Unresolved name or legal designator at {row.line_id}")
 
 
-def main():
-    inputs = {f: pd.read_csv(f, encoding="utf-8-sig", dtype=str, keep_default_na=False) for f in FILES}
+def main(src=".", out=None):
+    """Mask the raw ledgers in `src`; write masked files and the mapping to `out` (default: `src`)."""
+    src = Path(src)
+    out = src if out is None else Path(out)
+    inputs = {f: pd.read_csv(src / f, encoding="utf-8-sig", dtype=str, keep_default_na=False) for f in FILES}
     masker = LedgerMasker(pd.concat(inputs.values())["counterparty"])
     for df in inputs.values():
         df["counterparty"] = df["counterparty"].map(lambda name: masker.vendors.get(name, ""))
@@ -110,7 +153,7 @@ def main():
 
     mapping = [(kind, name, code) for kind, names in (("vendor", masker.vendors), ("employee", masker.employees))
                for name, code in names.items()]
-    with TemporaryDirectory(dir=".") as temp:
+    with TemporaryDirectory(dir=out) as temp:
         staged = Path(temp)
         for name, df in inputs.items():
             df.to_csv(staged / name.replace(".csv", "_masked.csv"), index=False, encoding="utf-8-sig")
@@ -118,7 +161,7 @@ def main():
         pd.DataFrame(mapping, columns=["type", "original", "code"]).to_csv(key, index=False, encoding="utf-8-sig")
         key.chmod(0o600)
         for output in staged.iterdir():
-            output.replace(output.name)
+            output.replace(out / output.name)
     print(f"Masked {len(masker.vendors)} vendors and {len(masker.employees)} employees across both ledgers.")
 
 
