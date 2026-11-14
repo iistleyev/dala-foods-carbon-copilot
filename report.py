@@ -19,7 +19,8 @@ from openpyxl.utils import get_column_letter
 
 from analysis import load, stage_of
 from run import BASIS
-from src.load import ROOT, load_ledgers, read_csv, strip_injection
+from src.load import ROOT, load_factors, load_ledgers, read_csv, strip_injection
+from src.memo import memo_items
 
 OUT = ROOT / "outputs" / "carbon_report.xlsx"
 
@@ -49,6 +50,16 @@ def put(ws, cell, value, font=BLACK, fmt=None, fill=None, bold=False):
         c.number_format = fmt
     if fill:
         c.fill = fill
+    return c
+
+
+def data_cell(ws, row, col, value, font=BLUE):
+    """A value copied from the ledger or a CSV. Text that starts like a formula ("=", "+", "-", "@")
+    is stored as plain text: ledger text is data, never something Excel should execute."""
+    c = ws.cell(row=row, column=col, value=None if pd.isna(value) else value)
+    if isinstance(c.value, str) and c.value[:1] in ("=", "+", "-", "@"):
+        c.data_type = "s"
+    c.font = font
     return c
 
 
@@ -93,12 +104,12 @@ def sheet_audit(wb, a, flast):
         values = [x.line_id, x.set, x.description, x.gl, x.quantity, x.unit, x.category, x.ef_id,
                   x.activity_qty, x.activity_unit, x.method]
         for col, v in enumerate(values, 1):
-            ws.cell(row=r, column=col, value=None if pd.isna(v) else v).font = BLUE
+            data_cell(ws, r, col, v)
         ws.cell(row=r, column=12, value=f'=IFERROR(INDEX(Factors!$D$2:$D${flast},MATCH(H{r},Factors!$A$2:$A${flast},0)),0)').font = GREEN
         ws.cell(row=r, column=13, value=f'=IF(K{r}="excluded",0,IFERROR(ROUND(I{r}*L{r}/1000,4),""))')
         ws.cell(row=r, column=14, value=float(x.tco2e)).font = BLUE
         for col, v in zip(range(15, 20), [x.stage, x.rule_id, x.reason, x.confidence, x.review_flag]):
-            ws.cell(row=r, column=col, value=None if pd.isna(v) else v).font = BLUE
+            data_cell(ws, r, col, v)
         # Excel's ROUND rounds halves up, pandas to even: up to 0.0001 t per line is rounding, not an error.
         ws.cell(row=r, column=20, value=f'=IF(M{r}="","",M{r}-N{r})').number_format = "0.0000;-0.0000;-"
         ws.cell(row=r, column=9).number_format = "#,##0.0000"
@@ -110,7 +121,7 @@ def sheet_audit(wb, a, flast):
     return len(a) + 1  # last data row
 
 
-def sheet_summary(wb, last, categories):
+def sheet_summary(wb, last, categories, flast, memo):
     ws = wb.create_sheet("Summary", 1)
     put(ws, "A1", "GHG inventory 2025 — Dala Foods LLP (train + test lines)", TITLE)
     put(ws, "A2", "Totals are formulas over the Audit sheet. Scope 2 is location-based; see Read me.")
@@ -142,6 +153,26 @@ def sheet_summary(wb, last, categories):
     put(ws, f"D{tot + 1}", f"=IF(D{tot}=0,0,E{tot}/D{tot})", fmt=PCT)
     put(ws, f"A{tot + 2}", "Check: lines where factor x activity differs from the pipeline by > 0.0001 t (should be 0)")
     put(ws, f"D{tot + 2}", f'=COUNTIFS({rng("T")},">0.00011")+COUNTIFS({rng("T")},"<-0.00011")', fmt="0")
+
+    # Memo items: shown next to the inventory, NOT included in the totals above (see src/memo.py).
+    m = tot + 4
+    header(ws, m, ["Memo", "Item (not in totals)", "", "tCO2e", "", "", "Share of total", "", "Basis"])
+    s2 = f'=SUMIF(A{first}:A{tot - 1},"S2",D{first}:D{tot - 1})'
+    fac = f'INDEX(Factors!$D$2:$D${flast},MATCH("EF_WASTE_LANDFILL_T",Factors!$A$2:$A${flast},0))'
+    cat12 = f'=SUMIFS({rng("I")},{rng("O")},"packaging")/1000*{fac}/1000'
+    live = {"Scope 2 market-based": s2, "Scope 3 Cat 12 end of life of sold packaging (indicative)": cat12}
+    for i, x in enumerate(memo.itertuples(index=False), m + 1):
+        put(ws, f"A{i}", "MEMO")
+        put(ws, f"B{i}", x.category)
+        if x.category in live:
+            put(ws, f"D{i}", live[x.category], GREEN, T)
+        elif pd.notna(x.tco2e):
+            put(ws, f"D{i}", float(x.tco2e), BLUE, T)
+        else:
+            put(ws, f"D{i}", "not estimated")
+        if pd.notna(x.tco2e):
+            put(ws, f"G{i}", f"=D{i}/$D${tot}", fmt=PCT)
+        put(ws, f"I{i}", x.basis)
     ws.freeze_panes = "A5"
 
 
@@ -155,7 +186,7 @@ def sheet_review(wb, a):
     for r, x in enumerate(q.itertuples(index=False), 4):
         for col, v in enumerate([x.line_id, x.set, x.description, x.category, float(x.tco2e),
                                  x.review_flag, x.reason], 1):
-            ws.cell(row=r, column=col, value=v).font = BLUE
+            data_cell(ws, r, col, v)
         ws.cell(row=r, column=5).number_format = T4
     put(ws, "H3", "Lines in queue", BOLD)
     put(ws, "H4", len(q), BLUE)
@@ -167,7 +198,7 @@ def sheet_factors(wb, factors):
     header(ws, 1, list(factors.columns), [22, 44, 14, 14, 26, 50])
     for r, row in enumerate(factors.itertuples(index=False), 2):
         for col, v in enumerate(row, 1):
-            ws.cell(row=r, column=col, value=None if pd.isna(v) else v).font = BLUE
+            data_cell(ws, r, col, v)
     put(ws, f"A{len(factors) + 3}", "Source: emission_factors.csv (case data pack), used as given.")
 
 
@@ -325,8 +356,7 @@ def sheet_injection(wb, a):
     for r, x in enumerate(a[a["injection"].fillna(False).astype(bool)].itertuples(index=False), 4):
         for col, v in enumerate([x.line_id, x.set, x.description, strip_injection(x.description)[0],
                                  x.category, x.ef_id, float(x.tco2e), x.rule_id, x.review_flag], 1):
-            cell = ws.cell(row=r, column=col, value=v)
-            cell.font, cell.alignment = BLUE, WRAP
+            data_cell(ws, r, col, v).alignment = WRAP
         ws.cell(row=r, column=7).number_format = T4
 
 
@@ -366,7 +396,7 @@ def build(path=OUT):
     sheet_readme(wb)
     flast = len(factors) + 1  # last row of the Factors table
     last = sheet_audit(wb, a, flast)
-    sheet_summary(wb, last, categories)
+    sheet_summary(wb, last, categories, flast, memo_items(a, load_factors()))
     sheet_review(wb, a)
     sheet_loan(wb, cfg, last, src, flast)
     sheet_product(wb, a, cfg, last, src)

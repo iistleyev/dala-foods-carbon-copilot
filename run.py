@@ -11,6 +11,7 @@ from src.duplicates import (FREIGHT_OVERLAP_FLAG, FUEL_OVERLAP_FLAG, find_carrie
                             find_duplicates)
 from src.fallback import LOW_CONFIDENCE, SpendFallback
 from src.load import ROOT, load_airports, load_factors, load_ledgers, load_packaging
+from src.memo import memo_items
 from src.rules import (QTY_FLAG, UNIT_GAP_FLAG, classify, load_rules, result,
                        spend_result)
 from src.score import confusion, score, worst_lines
@@ -21,7 +22,7 @@ BASIS = {
     "S1_STATIONARY": "IPCC 2006 Tier 1 default; CO2 only",
     "S1_MOBILE": "IPCC 2006 Tier 1 default; CO2 only",
     "S1_FUGITIVE": "refill = leak; GWP-100 from IPCC AR5",
-    "S2_ELECTRICITY": "location-based (Kazakhstan grid average); market-based not reported",
+    "S2_ELECTRICITY": "location-based (Kazakhstan grid average); market-based equal (memo row)",
     "S2_HEAT": "location-based (Almaty district heating factor)",
     "S3_C4_TRANSPORT": "fuel-, distance- and spend-based; see Cat 4 overlap flags in audit.csv",
 }
@@ -103,9 +104,11 @@ def summarise(audit):
     out = pd.concat([g, tot], ignore_index=True)
     # The brief asks for tCO2e per tonne of product (105,000 t, set in scenarios.yaml).
     out["tco2e_per_t_product"] = out["tco2e"] / product_tonnes()
-    out = out.round(4)
     out["basis"] = out["category"].map(BASIS).fillna("")
-    return out
+    # Memo rows below TOTAL: shown next to the inventory, not part of it (see src/memo.py).
+    memo = memo_items(audit, load_factors())
+    memo["tco2e_per_t_product"] = memo["tco2e"] / product_tonnes()
+    return pd.concat([out, memo], ignore_index=True).round(4)
 
 
 def product_tonnes():

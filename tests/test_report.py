@@ -35,7 +35,8 @@ def test_one_audit_row_per_line_with_live_recomputation(workbook):
 
 def test_summary_totals_are_formulas_over_audit(workbook):
     ws = workbook["Summary"]
-    rows = [r for r in range(5, ws.max_row + 1) if ws.cell(r, 2).value]
+    total = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "TOTAL")
+    rows = [r for r in range(5, total) if ws.cell(r, 2).value]
     assert len(rows) == 11                                            # all categories
     assert all(str(ws.cell(r, 4).value).startswith("=SUMIFS(Audit!") for r in rows)
 
@@ -57,3 +58,22 @@ def test_injection_sheet_lists_the_planted_lines(workbook):
     ws = workbook["Injection lines"]
     assert ws.max_row - 3 >= 5
     assert all("instruction-like text ignored" in ws.cell(r, 9).value for r in range(4, ws.max_row + 1))
+
+
+def test_summary_memo_block_below_total(workbook):
+    ws = workbook["Summary"]
+    memo = [r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "MEMO"]
+    total = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "TOTAL")
+    assert len(memo) == 5 and min(memo) > total
+    assert ws.cell(memo[0], 4).value.startswith('=SUMIF(A')               # market-based follows Scope 2
+    assert ws.cell(memo[-1], 4).value == "not estimated"                  # Cat 3
+
+
+def test_ledger_text_that_looks_like_a_formula_stays_text(tmp_path):
+    from openpyxl import Workbook
+    wb = Workbook()
+    for i, text in enumerate(['=HYPERLINK("http://x","click")', "+1+1", "-2", "@SUM(A1)"], 1):
+        report.data_cell(wb.active, i, 1, text)
+    wb.save(tmp_path / "t.xlsx")
+    ws = load_workbook(tmp_path / "t.xlsx").active
+    assert [ws.cell(i, 1).data_type for i in range(1, 5)] == ["s"] * 4

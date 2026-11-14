@@ -320,4 +320,4 @@ def test_fuel_and_freight_for_one_carrier_are_flagged_not_changed():
     assert a.loc["X91001", "tco2e"] == pytest.approx(500 * 2.68 / 1000)       # flag only, numbers unchanged
     assert a.loc["X91002", "tco2e"] == pytest.approx(5000 * 0.11 / 1000)
     basis = summarise(audit).set_index("category")["basis"]
-    assert basis["S2_ELECTRICITY"].startswith("location-based") and "market-based not reported" in basis["S2_ELECTRICITY"]
+    assert basis["S2_ELECTRICITY"].startswith("location-based") and "market-based equal" in basis["S2_ELECTRICITY"]
