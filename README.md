@@ -59,6 +59,7 @@ outputs/            predictions, audit trail, summary, report
 - **`outputs/predictions.csv`** — the submission: line_id, category, tco2e (683 test lines).
 - **`outputs/audit.csv`** — one row per train + test line: category, ef_id, activity quantity and unit,
   method (activity / spend / excluded), tCO2e, rule_id, reason, confidence, review_flag. No names.
+- **`pitch/pitch_deck.pptx`** — the pitch deck (8 slides: product, pipeline, safeguards, results, cost, roadmap).
 - **`pitch/bank_summary.pdf`** — one-page GHG inventory summary for the bank: totals by scope and category,
   activity vs spend share, hotspots, Pareto of suppliers and lines, intensity per tonne of product.
 - **`outputs/summary.csv`** — totals by scope and category, activity vs spend share, tCO2e per tonne of
