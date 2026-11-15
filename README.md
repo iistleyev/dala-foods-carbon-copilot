@@ -27,7 +27,6 @@ python -m pytest
 | `python run.py` | the pipeline; prints train score, worst lines, confusion matrix, review warnings | `outputs/predictions.csv`, `audit.csv`, `summary.csv` |
 | `streamlit run app.py` | local demo page: **Live run** (upload a ledger CSV) and **Pitch** (numbers, charts, green-loan sliders) | nothing |
 | `python pitch/build_pitch.py` | pitch numbers and 16:9 charts, all computed from the outputs | `pitch/pitch_numbers.md/.json`, `pitch/*.png` |
-| `python pitch/build_bank_summary.py` | one-page summary for the bank: totals by scope and category, activity vs spend, hotspots, kg CO2e per kg | `pitch/bank_summary.pdf`, `pitch/bank_summary.html` |
 | `python analysis.py` | answers for the bank, retailer and CFO | `outputs/loan_scenarios.csv`, `product_footprint.csv`, `cost_model.csv` |
 | `python report.py` | everything in one Excel workbook with live formulas | `outputs/carbon_report.xlsx` |
 | `python stress_test.py` | 107 checks on invented lines: file chaos, value chaos, typos, 17 injection styles, accounting traps, determinism, fresh clone | prints a pass/fail table |
@@ -60,6 +59,8 @@ outputs/            predictions, audit trail, summary, report
 - **`outputs/predictions.csv`** — the submission: line_id, category, tco2e (683 test lines).
 - **`outputs/audit.csv`** — one row per train + test line: category, ef_id, activity quantity and unit,
   method (activity / spend / excluded), tCO2e, rule_id, reason, confidence, review_flag. No names.
+- **`pitch/bank_summary.pdf`** — one-page GHG inventory summary for the bank: totals by scope and category,
+  activity vs spend share, hotspots, Pareto of suppliers and lines, intensity per tonne of product.
 - **`outputs/summary.csv`** — totals by scope and category, activity vs spend share, tCO2e per tonne of
   product, calculation basis, and memo rows below the total.
 

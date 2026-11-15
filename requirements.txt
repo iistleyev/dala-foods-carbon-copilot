@@ -7,7 +7,6 @@ scipy==1.18.1
 pyyaml==6.0.3
 openpyxl==3.1.5      # report.py spreadsheet
 matplotlib==3.11.2   # pitch charts
-pymupdf==1.28.2      # bank summary PDF
 streamlit==1.63.0    # app.py demo
 pytest==9.2.0        # tests
 ruff==0.17.5         # lint / format (development only)
