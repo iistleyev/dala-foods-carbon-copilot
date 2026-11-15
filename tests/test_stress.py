@@ -1,4 +1,5 @@
 """The stress test (stress_test.py) under pytest: one test per group, every check must pass."""
+
 import pytest
 
 import stress_test

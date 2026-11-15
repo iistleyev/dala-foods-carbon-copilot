@@ -1,0 +1,12 @@
+# Lint and format settings (python -m ruff check . && python -m ruff format .)
+line-length = 120
+target-version = "py312"
+extend-exclude = ["protocols", "outputs", "starter_pipeline.py"]  # organisers' baseline, kept as given
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]  # long rule strings and regexes read better on one line
+
+[lint.per-file-ignores]
+"tests/*" = ["E402"]
+"pitch/build_pitch.py" = ["E402"]  # puts the project root on sys.path before importing it

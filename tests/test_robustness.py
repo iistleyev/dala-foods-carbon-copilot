@@ -1,4 +1,5 @@
 """Robustness checks: planted instructions, duplicates, credit notes, special conversions, output format."""
+
 import sys
 from pathlib import Path
 
@@ -9,8 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run import run_pipeline  # noqa: E402
 from src.duplicates import find_duplicates  # noqa: E402
-from src.load import (ROOT, load_airports, load_factors, load_ledgers, load_packaging,  # noqa: E402
-                      norm_text, strip_injection)
+from src.load import ROOT, load_airports, load_factors, load_ledgers, load_packaging, norm_text, strip_injection  # noqa: E402
 from src.rules import classify, load_rules  # noqa: E402
 from src.score import score  # noqa: E402
 
@@ -27,8 +27,13 @@ INJECTIONS = [
 
 @pytest.fixture(scope="module")
 def ctx():
-    return {"df": load_ledgers(), "rules": load_rules(ROOT / "rules.yaml"),
-            "factors": load_factors(), "airports": load_airports(), "packaging": load_packaging()}
+    return {
+        "df": load_ledgers(),
+        "rules": load_rules(ROOT / "rules.yaml"),
+        "factors": load_factors(),
+        "airports": load_airports(),
+        "packaging": load_packaging(),
+    }
 
 
 @pytest.fixture(scope="module")
@@ -77,13 +82,14 @@ def test_no_test_line_excluded_because_of_text(pipeline):
 
 
 def test_duplicates_need_full_match():
-    base = {"doc_no": "D1", "counterparty": "A", "raw_text": "аренда офиса", "quantity": 1.0,
-            "amount_kzt_gross": 100.0}
-    df = pd.DataFrame([
-        {**base, "line_id": "L00001"},
-        {**base, "line_id": "L00002"},                                  # exact copy -> duplicate
-        {**base, "line_id": "L00003", "raw_text": "охрана объекта"},    # same doc_no only -> not a duplicate
-    ])
+    base = {"doc_no": "D1", "counterparty": "A", "raw_text": "аренда офиса", "quantity": 1.0, "amount_kzt_gross": 100.0}
+    df = pd.DataFrame(
+        [
+            {**base, "line_id": "L00001"},
+            {**base, "line_id": "L00002"},  # exact copy -> duplicate
+            {**base, "line_id": "L00003", "raw_text": "охрана объекта"},  # same doc_no only -> not a duplicate
+        ]
+    )
     assert find_duplicates(df) == {"L00002": "L00001"}
 
 
@@ -150,9 +156,15 @@ def test_planted_test_lines_carry_the_ignored_flag(pipeline):
     assert len(flagged) >= 5 and flagged.str.contains("instruction-like text ignored").all()
 
 
-@pytest.mark.parametrize("text", ["Услуги по замеру выбросов котельной",
-                                  "Аудит отчетности. Услуги по замеру выбросов котельной",
-                                  "Cooling system: maintenance", "Возврат брака: Гофрокороб"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Услуги по замеру выбросов котельной",
+        "Аудит отчетности. Услуги по замеру выбросов котельной",
+        "Cooling system: maintenance",
+        "Возврат брака: Гофрокороб",
+    ],
+)
 def test_ordinary_text_about_emissions_is_not_an_injection(text):
     assert strip_injection(text) == (text, False)
 

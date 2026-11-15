@@ -1,4 +1,5 @@
 """Conversions for ledger quantities, package weights and flight itineraries."""
+
 import math
 import re
 
@@ -9,11 +10,15 @@ LONG_HAUL_KM = 3700.0
 
 # Ledger unit, accepted spellings in either the unit column or an amount such as "1 500 kWh".
 SUFFIXES = {
-    "кг": ("кг", "kg"), "км": ("км", "km"), "г": ("г", "g"),
-    "т": ("т", "t"), "л": ("л", "l"),
+    "кг": ("кг", "kg"),
+    "км": ("км", "km"),
+    "г": ("г", "g"),
+    "т": ("т", "t"),
+    "л": ("л", "l"),
     "кВт·ч": ("квт·ч", "квт*ч", "квт.ч", "квтч", "kwh"),
     "МВт·ч": ("мвт·ч", "мвт*ч", "мвт.ч", "мвтч", "mwh"),
-    "Гкал": ("гкал", "gcal"), "ГДж": ("гдж", "gj"),
+    "Гкал": ("гкал", "gcal"),
+    "ГДж": ("гдж", "gj"),
     "м3": ("м3", "м³", "m3", "m³"),
     "тыс. м3": ("тыс. м3", "тыс. м³", "тыс.м3", "тыс м3"),
 }
@@ -39,6 +44,7 @@ def parse_number(s):
 
 
 def parse_measure(text, unit):
+    """First quantity written with the given unit in a text, or None."""
     for match in MEASUREMENT.finditer(text):
         if UNIT_ALIASES[match[2].lower()] == unit:
             return _num(match[1])
@@ -46,14 +52,17 @@ def parse_measure(text, unit):
 
 
 def parse_kg(text):
+    """Kilograms written in a text ('11.1 кг'), or None."""
     return parse_measure(text, "кг")
 
 
 def parse_km(text):
+    """Kilometres written in a text ('3100 км'), or None."""
     return parse_measure(text, "км")
 
 
 def parse_grams(text):
+    """Grams written in a text ('28 г'), or None."""
     return parse_measure(text, "г")
 
 
@@ -78,7 +87,7 @@ def piece_weight_kg(text, packaging):
     matches = []
     for name, weight in packaging.items():
         key = _package_key(name)
-        if key and any(words[i:i + len(key)] == key for i in range(len(words) - len(key) + 1)):
+        if key and any(words[i : i + len(key)] == key for i in range(len(words) - len(key) + 1)):
             matches.append(weight)
     if len(matches) == 1:
         return matches[0], "Piece weight from packaging_specs.csv."
@@ -86,6 +95,7 @@ def piece_weight_kg(text, packaging):
 
 
 def unit_multiplier(spec, text):
+    """Number that converts the ledger quantity to the factor's unit."""
     if spec == "kg_in_text":
         return parse_kg(text)
     if isinstance(spec, str) and "/" in spec:
@@ -95,6 +105,7 @@ def unit_multiplier(spec, text):
 
 
 def haversine_km(a, b) -> float:
+    """Great-circle distance between two airports (R = 6371 km)."""
     lat1, lon1, lat2, lon2 = map(math.radians, (a[0], a[1], b[0], b[1]))
     h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
     return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(min(h, 1.0)))
@@ -106,13 +117,9 @@ ROUTE_JOIN = re.compile(r"\s*(?:->|[-‐‑–—→/>]|\b(?:to|via|до|чер�
 IATA = re.compile(r"\b[a-z]{3}\b", re.I | re.ASCII)
 # A separately listed ticket carries a number ("Ticket 1:", "билет №2"). The bare word is not a
 # label: "Авиабилет ALA-NQZ" or "Each ticket is for one passenger" must not count as tickets.
-TICKET_LABEL = re.compile(
-    r"\b(?:ticket|авиабилет|билет)\s*(?:no\.?\s*|[#№]\s*)?\d+\s*:?", re.I
-)
+TICKET_LABEL = re.compile(r"\b(?:ticket|авиабилет|билет)\s*(?:no\.?\s*|[#№]\s*)?\d+\s*:?", re.I)
 AIRPORT_PAIR = re.compile(r"(?=\b([a-z]{3})\s*(?:->|[-‐‑–—→/>])\s*([a-z]{3})\b)", re.I | re.ASCII)
-TICKET_BOUNDARY = re.compile(
-    r"([-‐‑–—→]\s*[a-z]{3})(?:\s+/\s+|\s+)(?=[a-z]{3}\s*[-‐‑–—→])", re.I | re.ASCII
-)
+TICKET_BOUNDARY = re.compile(r"([-‐‑–—→]\s*[a-z]{3})(?:\s+/\s+|\s+)(?=[a-z]{3}\s*[-‐‑–—→])", re.I | re.ASCII)
 
 
 def flight_legs(text: str, airports: dict):
@@ -126,8 +133,8 @@ def flight_legs(text: str, airports: dict):
     codes = [m for m in IATA.finditer(text) if m[0].upper() in airports]
     legs = []
     used = set()
-    for i, (left, right) in enumerate(zip(codes, codes[1:])):
-        if not ROUTE_JOIN.fullmatch(text[left.end():right.start()]):
+    for i, (left, right) in enumerate(zip(codes, codes[1:], strict=False)):
+        if not ROUTE_JOIN.fullmatch(text[left.end() : right.start()]):
             continue
         a, b = left[0].upper(), right[0].upper()
         km = haversine_km(airports[a], airports[b])
@@ -154,7 +161,7 @@ def ticket_counts(text, legs, quantity, airports):
     listed = []
     for i, label in enumerate(labels):
         end = labels[i + 1].start() if i + 1 < len(labels) else len(text)
-        trip = flight_legs(text[label.end():end], airports)
+        trip = flight_legs(text[label.end() : end], airports)
         if not trip:
             return None
         listed.extend(trip)
@@ -164,6 +171,7 @@ def ticket_counts(text, legs, quantity, airports):
 
 
 def refrigerant_ef(text: str):
+    """Refrigerant factor id named in a text (R404A, R134A, R410A, R744), or None."""
     t = text.lower().replace("-", "").replace(" ", "")
     for gas in ("r404a", "r134a", "r410a", "r744"):
         if gas in t:

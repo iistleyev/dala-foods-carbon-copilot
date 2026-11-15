@@ -1,4 +1,5 @@
 """Exact leaderboard formula plus diagnostics (worst lines, confusion matrix)."""
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import f1_score
@@ -13,11 +14,26 @@ def score(true_cat, pred_cat, true_t, pred_t) -> dict:
 
 
 def worst_lines(merged: pd.DataFrame, n=15) -> pd.DataFrame:
+    """The n train lines with the largest absolute tCO2e error."""
     m = merged.assign(abs_err=(merged["tco2e"] - merged["y_tco2e"]).abs())
-    cols = ["line_id", "description", "gl", "quantity", "unit", "category", "y_category",
-            "ef_id", "y_ef_id", "tco2e", "y_tco2e", "abs_err", "rule_id"]
+    cols = [
+        "line_id",
+        "description",
+        "gl",
+        "quantity",
+        "unit",
+        "category",
+        "y_category",
+        "ef_id",
+        "y_ef_id",
+        "tco2e",
+        "y_tco2e",
+        "abs_err",
+        "rule_id",
+    ]
     return m.sort_values("abs_err", ascending=False).head(n)[cols]
 
 
 def confusion(merged: pd.DataFrame) -> pd.DataFrame:
+    """Confusion matrix of true vs predicted category."""
     return pd.crosstab(merged["y_category"], merged["category"], rownames=["true"], colnames=["pred"])

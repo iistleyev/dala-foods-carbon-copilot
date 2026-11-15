@@ -1,4 +1,5 @@
 """The live demo's processing function (src/demo.py) on data/demo_lines.csv, without the UI."""
+
 import hashlib
 
 import pytest
@@ -14,7 +15,7 @@ def result():
     pred = ROOT / "outputs" / "predictions.csv"
     before = hashlib.sha256(pred.read_bytes()).hexdigest()
     res = process(read_upload(DEMO.read_bytes()))
-    assert hashlib.sha256(pred.read_bytes()).hexdigest() == before   # the demo never writes outputs/
+    assert hashlib.sha256(pred.read_bytes()).hexdigest() == before  # the demo never writes outputs/
     return res
 
 

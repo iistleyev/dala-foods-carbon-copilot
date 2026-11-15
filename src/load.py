@@ -1,4 +1,5 @@
 """Load the ledgers and reference tables, and normalise text, units and amounts."""
+
 import re
 from pathlib import Path
 
@@ -14,6 +15,7 @@ TRAIN_FILE = "ledger_train_masked.csv"
 TEST_FILE = "ledger_test_masked.csv"
 
 # Every spelling we accept for a unit -> one canonical code (the codes used in the official data).
+# fmt: off
 UNIT_MAP = {
     **UNIT_ALIASES,
     "кг": "кг", "кг.": "кг", "kg": "кг", "килограмм": "кг",
@@ -31,11 +33,13 @@ UNIT_MAP = {
     "билет": "билет", "сут": "сут", "усл": "усл", "рейс": "рейс", "мес": "мес", "уп": "уп",
     "услуга": "усл", "услуги": "усл", "service": "усл", "services": "усл",
 }
+# fmt: on
 
 # Text that talks to an AI instead of describing a purchase. Ledger text is data, never
 # instructions: we strip it before classifying so it cannot change the output.
 # Deliberately narrow: plain words like "выбросов" or "emissions" ("Услуги по замеру выбросов
 # котельной") describe purchases. Only address forms and commands count:
+# fmt: off
 INJECTION_RE = re.compile(
     r"\b(?:ignore|disregard)\s+(?:all\s+|any\s+|the\s+)?(?:previous|prior|above|earlier)\b"  # ignore previous ...
     r"|\bигнорир\w*\b[^.;\n]{0,30}?\b(?:предыдущ|прошл|все|правил|инструкц)\w*"          # игнорируй инструкции
@@ -52,9 +56,11 @@ INJECTION_RE = re.compile(
     r"|\b(?:exclud|исключ)\w*\b[^.;\n]{0,60}?\b(?:line|inventory|строк|расчет|инвентаризац)\w*",  # exclude this line
     re.IGNORECASE,
 )
+# fmt: on
 
 
 def read_csv(name: str) -> pd.DataFrame:
+    """Read a project CSV with the case's encoding and GL dtype."""
     return pd.read_csv(ROOT / name, encoding="utf-8-sig", dtype={"gl_account": str})
 
 
@@ -83,8 +89,8 @@ def strip_injection(raw) -> tuple[str, bool]:
             kept.append(sentence)
             continue
         found = True
-        if sentence[:m.start()].strip(" ,;:-–—"):  # injection mid-sentence: keep the purchase before it
-            kept.append(sentence[:m.start()].rstrip(" ,;:-–—"))
+        if sentence[: m.start()].strip(" ,;:-–—"):  # injection mid-sentence: keep the purchase before it
+            kept.append(sentence[: m.start()].rstrip(" ,;:-–—"))
     if not kept:  # never return an empty description (it is still flagged)
         kept = sentences[:1]
     s = " ".join(kept).strip()
@@ -92,6 +98,7 @@ def strip_injection(raw) -> tuple[str, bool]:
 
 
 def norm_unit(u) -> str:
+    """Canonical unit code for any accepted spelling."""
     if pd.isna(u) or str(u).strip() == "":
         return ""
     key = re.sub(r"\s+", " ", str(u).strip().lower())
@@ -169,11 +176,15 @@ def load_packaging() -> dict:
 
 
 def load_factors() -> dict:
+    """emission_factors.csv as {ef_id: {value, unit, category}}."""
     ef = read_csv("emission_factors.csv")
-    return {r.ef_id: {"value": float(r.kgCO2e_per_unit), "unit": r.unit,
-                      "category": r.typical_category} for r in ef.itertuples()}
+    return {
+        r.ef_id: {"value": float(r.kgCO2e_per_unit), "unit": r.unit, "category": r.typical_category}
+        for r in ef.itertuples()
+    }
 
 
 def load_airports() -> dict:
+    """airports.csv as {IATA: (lat, lon, country)}."""
     ap = read_csv("airports.csv")
     return {r.iata: (float(r.lat), float(r.lon), r.country) for r in ap.itertuples()}

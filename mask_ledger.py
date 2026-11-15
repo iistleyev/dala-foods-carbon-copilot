@@ -1,4 +1,5 @@
 """Create both masked ledgers locally. Keep the reversible mask_mapping.csv private."""
+
 import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -71,6 +72,8 @@ def _known_names(names):
 
 
 class LedgerMasker:
+    """Replaces counterparty and person names with stable VENDOR_xxx / EMP_xx codes."""
+
     def __init__(self, counterparties):
         names = sorted({name for name in counterparties if name.strip()})
         self.vendors = {name: f"VENDOR_{i:03d}" for i, name in enumerate(names, 1)}
@@ -113,6 +116,7 @@ class LedgerMasker:
         return code
 
     def mask_desc(self, text):
+        """Mask names and legal entities in one description."""
         parked = []
 
         def park(masked):
@@ -143,19 +147,24 @@ class LedgerMasker:
         text = PREFIX_COMPANY.sub(company, text)
         if self.known:
             text = self.known.sub(lambda m: self.aliases[m[0].casefold()], text)
-        text = PERSON_FIELD.sub(lambda m: m[0][:m.start(1)-m.start()] + employee(m[1]), text)
+        text = PERSON_FIELD.sub(lambda m: m[0][: m.start(1) - m.start()] + employee(m[1]), text)
         text = PERSON.sub(lambda m: employee(m[0]) + (" " if m[0][-1].isspace() else ""), text)
         return PARKED.sub(lambda m: parked[ord(m[1]) - 0xE100], text)
 
     def validate(self, ledgers):
+        """Fail (ValueError with a line id) if any name or designator is left unmasked."""
         known = _known_names([*self.aliases, *self.vendors, *self.employees])
         for df in ledgers:
             for row in df.itertuples():
                 if row.counterparty and not re.fullmatch(r"VENDOR_\d+", row.counterparty):
                     raise ValueError(f"Unmasked counterparty at {row.line_id}")
                 rest = TOKEN.sub("|", RESOLVED_DESIGNATOR.sub("|", row.description))
-                if (MARKER.search(rest) or PERSON.search(rest) or PERSON_FIELD.search(rest)
-                        or (known and known.search(rest))):
+                if (
+                    MARKER.search(rest)
+                    or PERSON.search(rest)
+                    or PERSON_FIELD.search(rest)
+                    or (known and known.search(rest))
+                ):
                     raise ValueError(f"Unresolved name or legal designator at {row.line_id}")
 
 
@@ -170,8 +179,11 @@ def main(src=".", out=None):
         df["description"] = df["description"].map(masker.mask_desc)
     masker.validate(inputs.values())  # check both splits before publishing either file
 
-    mapping = [(kind, name, code) for kind, names in (("vendor", masker.vendors), ("employee", masker.employees))
-               for name, code in names.items()]
+    mapping = [
+        (kind, name, code)
+        for kind, names in (("vendor", masker.vendors), ("employee", masker.employees))
+        for name, code in names.items()
+    ]
     with TemporaryDirectory(dir=out) as temp:
         staged = Path(temp)
         for name, df in inputs.items():

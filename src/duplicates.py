@@ -3,6 +3,7 @@
 A duplicate is the same doc_no AND the same counterparty, description, quantity and gross amount.
 doc_no alone is NOT enough: about half of the repeated doc_nos are unrelated purchases.
 The lowest line_id is kept; every later copy is EXCLUDE with 0 tCO2e."""
+
 import re
 
 import pandas as pd

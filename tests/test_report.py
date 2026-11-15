@@ -1,5 +1,6 @@
 """Checks for report.py (the spreadsheet). Formula values are computed by Excel on opening; here we
 check the structure: sheets, one Audit row per line, formulas where results should be live."""
+
 import hashlib
 
 import pandas as pd
@@ -21,8 +22,17 @@ def workbook(tmp_path_factory):
 
 
 def test_all_sheets_present(workbook):
-    assert workbook.sheetnames == ["Read me", "Summary", "Audit", "Review queue", "Loan scenarios",
-                                   "Product footprint", "Cost model", "Injection lines", "Factors"]
+    assert workbook.sheetnames == [
+        "Read me",
+        "Summary",
+        "Audit",
+        "Review queue",
+        "Loan scenarios",
+        "Product footprint",
+        "Cost model",
+        "Injection lines",
+        "Factors",
+    ]
 
 
 def test_one_audit_row_per_line_with_live_recomputation(workbook):
@@ -37,14 +47,14 @@ def test_summary_totals_are_formulas_over_audit(workbook):
     ws = workbook["Summary"]
     total = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "TOTAL")
     rows = [r for r in range(5, total) if ws.cell(r, 2).value]
-    assert len(rows) == 11                                            # all categories
+    assert len(rows) == 11  # all categories
     assert all(str(ws.cell(r, 4).value).startswith("=SUMIFS(Audit!") for r in rows)
 
 
 def test_loan_inputs_come_from_scenarios_yaml_and_results_are_formulas(workbook):
     ws = workbook["Loan scenarios"]
     assert ws["B4"].value == 3000 and "ASSUMPTION" in ws["D4"].value
-    assert ws["B29"].value == "=B26*B14/B15"                          # break-even COP
+    assert ws["B29"].value == "=B26*B14/B15"  # break-even COP
     assert all(str(ws.cell(r, 9).value).startswith("=") for r in range(37, 45))
 
 
@@ -65,12 +75,13 @@ def test_summary_memo_block_below_total(workbook):
     memo = [r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "MEMO"]
     total = next(r for r in range(1, ws.max_row + 1) if ws.cell(r, 1).value == "TOTAL")
     assert len(memo) == 5 and min(memo) > total
-    assert ws.cell(memo[0], 4).value.startswith('=SUMIF(A')               # market-based follows Scope 2
-    assert ws.cell(memo[-1], 4).value == "not estimated"                  # Cat 3
+    assert ws.cell(memo[0], 4).value.startswith("=SUMIF(A")  # market-based follows Scope 2
+    assert ws.cell(memo[-1], 4).value == "not estimated"  # Cat 3
 
 
 def test_ledger_text_that_looks_like_a_formula_stays_text(tmp_path):
     from openpyxl import Workbook
+
     wb = Workbook()
     for i, text in enumerate(['=HYPERLINK("http://x","click")', "+1+1", "-2", "@SUM(A1)"], 1):
         report.data_cell(wb.active, i, 1, text)

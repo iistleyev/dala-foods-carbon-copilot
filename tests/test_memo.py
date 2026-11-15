@@ -1,4 +1,5 @@
 """Memo items: shown next to the inventory, never added to its totals or to predictions.csv."""
+
 import pandas as pd
 import pytest
 
@@ -28,8 +29,8 @@ def test_cat12_is_packaging_mass_times_case_landfill_factor(audit):
 
 def test_non_co2_by_hand_for_1000_litres_of_diesel():
     one = pd.DataFrame({"rule_id": ["FUEL_DIESEL_L"], "activity_qty": [1000.0]})
-    tj = 1000 * 0.84 * 43.0 / 1e6                        # density x NCV
-    expected = tj * (3.9 * 28 + 3.9 * 265) / 1000         # IPCC Table 3.2.2 x GWP AR5, kg -> t
+    tj = 1000 * 0.84 * 43.0 / 1e6  # density x NCV
+    expected = tj * (3.9 * 28 + 3.9 * 265) / 1000  # IPCC Table 3.2.2 x GWP AR5, kg -> t
     assert non_co2_tco2e(one)["Scope 1"] == pytest.approx(expected)
 
 
@@ -41,5 +42,5 @@ def test_memo_rows_are_not_in_the_total(audit):
     s = summarise(audit)
     assert s.loc[s["scope"] == "TOTAL", "tco2e"].item() == pytest.approx(audit["tco2e"].sum(), abs=1e-3)
     assert (s["scope"] == "MEMO").sum() == 5
-    assert s.index[s["scope"] == "TOTAL"].item() < s.index[s["scope"] == "MEMO"].min()   # memo below TOTAL
-    assert not s["basis"].fillna("").str.startswith(("=", "+", "@")).any()                # safe in Excel
+    assert s.index[s["scope"] == "TOTAL"].item() < s.index[s["scope"] == "MEMO"].min()  # memo below TOTAL
+    assert not s["basis"].fillna("").str.startswith(("=", "+", "@")).any()  # safe in Excel

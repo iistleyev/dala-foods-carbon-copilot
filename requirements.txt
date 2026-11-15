@@ -1,12 +1,12 @@
-# Exact versions the pipeline was tested with. Needs Python 3.12 or newer (wheels exist for 3.12,
-# 3.13, 3.14; numpy 2.5 dropped 3.11). Pinned so results are reproducible and dependencies can't
-# change underneath the jury's re-run (OWASP LLM03: supply chain).
+# Exact versions the project was tested with. Python 3.12 or newer (wheels exist for 3.12-3.14).
+# Pinned so results are reproducible and dependencies can't change under a re-run (OWASP LLM03).
 pandas==3.0.5
 numpy==2.5.2
 scikit-learn==1.9.1
 scipy==1.18.1
 pyyaml==6.0.3
-openpyxl==3.1.5
-matplotlib==3.11.2
-streamlit==1.63.0
-pytest==9.2.0
+openpyxl==3.1.5      # report.py spreadsheet
+matplotlib==3.11.2   # pitch charts
+streamlit==1.63.0    # app.py demo
+pytest==9.2.0        # tests
+ruff==0.17.5         # lint / format (development only)

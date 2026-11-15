@@ -1,4 +1,5 @@
 """Pitch numbers (pitch/build_pitch.py) are computed from the outputs, and the loan maths is right."""
+
 import pandas as pd
 import pytest
 
@@ -26,7 +27,7 @@ def test_purchase_group_shares_add_up(numbers):
 def test_break_even_cop_and_solar():
     r = green_loan(1_000_000, 0, 0.8, 1.91, cop=4.0, share=0.4, efficiency=0.9, ncv=34, solar_mwp=1, solar_yield=1300)
     assert r["break_even_cop"] == pytest.approx(34 / 3.6 * 0.9 * 0.8 / 1.91)
-    assert r["change_heat_pumps_t"] < 0                     # COP 4 is above break-even
+    assert r["change_heat_pumps_t"] < 0  # COP 4 is above break-even
     assert r["change_solar_t"] == pytest.approx(-1300 * 1000 * 0.8 / 1000)
 
 

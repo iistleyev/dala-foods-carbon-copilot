@@ -1,4 +1,5 @@
 """Checks for analysis.py (bank, retailer, CFO answers). Reads outputs/audit.csv from the last run.py."""
+
 import hashlib
 
 import pytest
@@ -19,7 +20,7 @@ def scenario(df, name):
 
 def test_solar_cuts_scope2_by_generation_times_grid_factor(inputs):
     loan, facts = loan_scenarios(*inputs)
-    assert facts["solar generation, kWh/yr"] == 4_050_000                       # 3,000 kWp x 1,350 kWh/kWp
+    assert facts["solar generation, kWh/yr"] == 4_050_000  # 3,000 kWp x 1,350 kWh/kWp
     assert scenario(loan, "solar only")["change_t"] == pytest.approx(-4_050_000 * 0.8 / 1000)
 
 
@@ -31,7 +32,7 @@ def test_break_even_cop(inputs):
 
 def test_heat_pumps_alone_raise_emissions_below_break_even(inputs):
     loan, _ = loan_scenarios(*inputs)
-    assert scenario(loan, "heat pumps only (COP 3.0)")["change_t"] > 0             # coal-heavy grid
+    assert scenario(loan, "heat pumps only (COP 3.0)")["change_t"] > 0  # coal-heavy grid
     assert scenario(loan, "solar + heat pumps (COP 3.0)")["change_t"] < 0
 
 

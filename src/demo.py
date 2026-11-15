@@ -7,6 +7,7 @@ uploaded rows (set = "demo"). No classification or emission logic lives here.
 Draft mode: lines the pipeline holds for review (method "review") are returned and listed, instead of
 stopping the run as run.py does before writing official outputs.
 """
+
 import io
 import json
 import time
@@ -16,8 +17,19 @@ import pandas as pd
 from run import AUDIT_COLS, run_pipeline
 from src.load import load_factors, load_ledgers, normalise
 
-REQUIRED = ["line_id", "posting_date", "doc_no", "counterparty", "description", "gl_account",
-            "cost_center", "quantity", "unit", "amount_kzt_gross", "vat_kzt"]
+REQUIRED = [
+    "line_id",
+    "posting_date",
+    "doc_no",
+    "counterparty",
+    "description",
+    "gl_account",
+    "cost_center",
+    "quantity",
+    "unit",
+    "amount_kzt_gross",
+    "vat_kzt",
+]
 ENCODINGS = ("utf-8-sig", "utf-8", "cp1251")
 
 
@@ -52,6 +64,7 @@ def read_upload(data: bytes) -> pd.DataFrame:
 
 
 def missing_columns(df: pd.DataFrame) -> list:
+    """Required ledger columns that the upload does not have."""
     return [c for c in REQUIRED if c not in df.columns]
 
 
@@ -90,13 +103,16 @@ def process(df: pd.DataFrame) -> dict:
     audit = audit[audit["set"] == "demo"].reset_index(drop=True)
 
     factors = load_factors()
-    shown = upload[["line_id", "description", "quantity", "unit"]].merge(
-        demo[["line_id", "injection"]], on="line_id").merge(audit, on="line_id")
+    shown = (
+        upload[["line_id", "description", "quantity", "unit"]]
+        .merge(demo[["line_id", "injection"]], on="line_id")
+        .merge(audit, on="line_id")
+    )
     shown["status"] = shown.apply(status, axis=1)
     shown["factor"] = shown["ef_id"].map(lambda e: factors[e]["value"] if e in factors else None)
     shown["converted"] = shown.apply(
-        lambda r: _qty(r["activity_qty"], r["activity_unit"]) if r["method"] in ("activity", "spend") else "",
-        axis=1)
+        lambda r: _qty(r["activity_qty"], r["activity_unit"]) if r["method"] in ("activity", "spend") else "", axis=1
+    )
     shown["conversion"] = shown.apply(conversion, axis=1)
     shown["calculation"] = shown.apply(lambda r: calculation(r, factors), axis=1)
     seconds = time.perf_counter() - start
@@ -114,17 +130,21 @@ def process(df: pd.DataFrame) -> dict:
         "by_scope": scoped.groupby("scope")["tco2e"].sum().reindex(["S1", "S2", "S3"], fill_value=0.0),
         "by_category": counted.groupby("category")["tco2e"].sum().sort_values(ascending=False),
         "stats": {
-            "lines": len(shown), "total_t": float(counted["tco2e"].sum()),
-            "calculated": len(counted), "review": int((shown["method"] == "review").sum()),
+            "lines": len(shown),
+            "total_t": float(counted["tco2e"].sum()),
+            "calculated": len(counted),
+            "review": int((shown["method"] == "review").sum()),
             "excluded": int((shown["method"] == "excluded").sum()),
             "activity_share": activity_t / (activity_t + spend_t) if activity_t + spend_t else 0.0,
-            "seconds": seconds, "renamed": renamed,
+            "seconds": seconds,
+            "renamed": renamed,
         },
     }
 
 
 # ----------------------------------------------------------------------------- explaining a line
 def status(r) -> str:
+    """Display status of a line: rule, ML fallback, needs review, excluded or duplicate."""
     if r["method"] == "review":
         return "needs review"
     if r["method"] == "excluded":
@@ -168,12 +188,14 @@ def calculation(r, factors) -> str:
         return f"Not calculated: {r['reason']}"
     if r["rule_id"] == "TRAVEL_FLIGHT" and "Leg calculations: " in str(r["reason"]):
         legs = json.loads(str(r["reason"]).split("Leg calculations: ")[1])
-        parts = [f"{l['from']}-{l['to']}: {_num(l['km'])} km × {_num(l['tickets'])} × {l['kgCO2e_per_pkm']} / 1000"
-                 f" = {l['tco2e']:.4f}" for l in legs]
+        parts = [
+            f"{leg['from']}-{leg['to']}: {_num(leg['km'])} km × {_num(leg['tickets'])} × {leg['kgCO2e_per_pkm']} / 1000"
+            f" = {leg['tco2e']:.4f}"
+            for leg in legs
+        ]
         return "; ".join(parts) + f"  →  total {r['tco2e']:.4f} tCO2e"
     f = factors.get(r["ef_id"])
     if f is None:
         return ""
     unit = "thousand KZT" if r["method"] == "spend" else r["activity_unit"]
-    return (f"{_num(r['activity_qty'])} {unit} × {_num(f['value'])} kgCO2e/{f['unit']} / 1000"
-            f" = {r['tco2e']:.4f} tCO2e")
+    return f"{_num(r['activity_qty'])} {unit} × {_num(f['value'])} kgCO2e/{f['unit']} / 1000 = {r['tco2e']:.4f} tCO2e"

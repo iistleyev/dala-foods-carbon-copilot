@@ -3,6 +3,7 @@
 TF-IDF on character 2-4-grams of (cleaned description + GL account) -> LogisticRegression over
 the spend-based factors seen in train. It can only return a spend factor (never EXCLUDE), and the
 category follows from that factor, so planted text cannot push a line to 0 through this path."""
+
 import difflib
 import re
 
@@ -22,15 +23,19 @@ def possible_typo(text: str, keywords) -> str | None:
         for stem in stems:
             if stem in word:
                 continue
-            ratio = max(difflib.SequenceMatcher(None, word[:len(stem) + d], stem).ratio() for d in (0, 1))
+            ratio = max(difflib.SequenceMatcher(None, word[: len(stem) + d], stem).ratio() for d in (0, 1))
             if ratio >= TYPO_CUTOFF:
                 return stem
     return None
 
+
 # Category implied by each spend factor (from the typical_category column of the factor file).
 SPEND_CATEGORY = {
-    "SP_TAXI": "S3_C6_TRAVEL", "SP_FREIGHT_ROAD": "S3_C4_TRANSPORT",
-    "SP_VEHICLES": "S3_C2_CAPITAL", "SP_MACHINERY": "S3_C2_CAPITAL", "SP_CONSTRUCTION": "S3_C2_CAPITAL",
+    "SP_TAXI": "S3_C6_TRAVEL",
+    "SP_FREIGHT_ROAD": "S3_C4_TRANSPORT",
+    "SP_VEHICLES": "S3_C2_CAPITAL",
+    "SP_MACHINERY": "S3_C2_CAPITAL",
+    "SP_CONSTRUCTION": "S3_C2_CAPITAL",
 }
 
 
@@ -39,15 +44,19 @@ SPEND_CATEGORY = {
 # "питание сотрудников", the caterer). They are removed before the model sees the text.
 NOT_THE_PURCHASE = re.compile(
     r"(?:\b(?:employee|passenger|travell?er|supplier|provider|сотрудник|пассажир|қызметкер|поставщик)"
-    r"\s*[:=]?\s*)?\b(?:vendor|emp)_\d+\b|\b(?:ип|тоо|ао|too|llp|llc)\b")
+    r"\s*[:=]?\s*)?\b(?:vendor|emp)_\d+\b|\b(?:ип|тоо|ао|too|llp|llc)\b"
+)
 
 
 def features(df):
+    """Model input: cleaned description without masking codes, plus the GL account."""
     text = df["text"].str.replace(NOT_THE_PURCHASE, " ", regex=True)
     return (text + " gl" + df["gl"] + " gl" + df["gl"]).tolist()
 
 
 class SpendFallback:
+    """Spend-factor classifier for lines no rule covers (TF-IDF + logistic regression)."""
+
     def __init__(self):
         self.model = make_pipeline(
             TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), sublinear_tf=True),
@@ -55,6 +64,7 @@ class SpendFallback:
         )
 
     def fit(self, train_df):
+        """Train on the spend lines of the train ledger."""
         spend = train_df[train_df["y_ef_id"].fillna("").str.startswith("SP_")]
         self.model.fit(features(spend), spend["y_ef_id"])
         return self

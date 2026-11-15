@@ -4,10 +4,21 @@ ledger_train.csv
 ledger_test.csv
 DalaFoods_DataPack.xlsx
 
-# Python / tooling
+# Organisers' reference material (kept locally, not part of the submission)
+protocols/
+
+# Python / tooling caches
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 .venv/
 venv/
 .claude/
+
+# Build and temp files
+dist/
+Team*_DalaFoods.zip
+outputs/audit.review.csv
+*.tmp
+~$*
