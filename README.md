@@ -27,6 +27,7 @@ python -m pytest
 | `python run.py` | the pipeline; prints train score, worst lines, confusion matrix, review warnings | `outputs/predictions.csv`, `audit.csv`, `summary.csv` |
 | `streamlit run app.py` | local demo page: **Live run** (upload a ledger CSV) and **Pitch** (numbers, charts, green-loan sliders) | nothing |
 | `python pitch/build_pitch.py` | pitch numbers and 16:9 charts, all computed from the outputs | `pitch/pitch_numbers.md/.json`, `pitch/*.png` |
+| `python pitch/build_bank_summary.py` | one-page summary for the bank: totals by scope and category, activity vs spend, hotspots, kg CO2e per kg | `pitch/bank_summary.pdf`, `pitch/bank_summary.html` |
 | `python analysis.py` | answers for the bank, retailer and CFO | `outputs/loan_scenarios.csv`, `product_footprint.csv`, `cost_model.csv` |
 | `python report.py` | everything in one Excel workbook with live formulas | `outputs/carbon_report.xlsx` |
 | `python stress_test.py` | 107 checks on invented lines: file chaos, value chaos, typos, 17 injection styles, accounting traps, determinism, fresh clone | prints a pass/fail table |

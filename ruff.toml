@@ -9,4 +9,4 @@ ignore = ["E501"]  # long rule strings and regexes read better on one line
 
 [lint.per-file-ignores]
 "tests/*" = ["E402"]
-"pitch/build_pitch.py" = ["E402"]  # puts the project root on sys.path before importing it
+"pitch/*.py" = ["E402"]  # these scripts put the project root on sys.path before importing it
